@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mole Racing Track Builder</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">
+      <strong>Mole Racing</strong>
+      <span>Track Builder Prototype</span>
+    </div>
+
+    <div class="tools">
+      <button id="addLong">+ Long Barrier</button>
+      <button id="addShort">+ Short Barrier</button>
+      <button id="addRed">+ Start / Finish</button>
+      <button id="duplicate">Duplicate</button>
+      <button id="delete">Delete</button>
+      <button id="toggleMagnets" class="active">Placement Assist: On</button>
+      <button id="resetView">Reset View</button>
+    </div>
+
+    <div class="status">
+      <span id="selectionInfo">Nothing selected</span>
+      <span id="zoomInfo">100%</span>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <svg id="canvas" xmlns="http://www.w3.org/2000/svg" aria-label="Track editor canvas">
+      <defs>
+        <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+          <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+        </pattern>
+      </defs>
+
+      <rect class="canvas-bg" x="-5000" y="-5000" width="10000" height="10000" />
+      <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#grid)" pointer-events="none" />
+
+      <g id="viewport">
+        <g id="barriers"></g>
+        <g id="selectionOverlay"></g>
+      </g>
+    </svg>
+
+    <div class="help">
+      <strong>Controls</strong>
+      <span>Drag a barrier to move it</span>
+      <span>Drag the round handle to rotate</span>
+      <span>Mouse wheel / trackpad: zoom</span>
+      <span>Hold Space and drag: pan</span>
+      <span>Q / E: rotate 5°</span>
+      <span>Delete / Backspace: remove</span>
+      <span>Placement guidance appears while moving or rotating</span>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
