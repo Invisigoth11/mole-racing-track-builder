@@ -14,6 +14,16 @@
     </div>
 
     <div class="tools">
+      <label class="track-name-control" for="trackName">
+        <span>Track</span>
+        <input id="trackName" type="text" value="Untitled Track" maxlength="80" />
+      </label>
+      <button id="newTrack">New Track</button>
+      <button id="saveTrack">Save Track…</button>
+      <button id="loadTrack">Load Track…</button>
+      <button id="exportSvg">Export SVG…</button>
+      <input id="trackFileInput" type="file" accept=".moleracing,application/json" hidden />
+      <span class="tool-divider" aria-hidden="true"></span>
       <button id="addLong">+ Long Barrier</button>
       <button id="addShort">+ Short Barrier</button>
       <button id="addRed">+ Start / Finish</button>
@@ -59,6 +69,9 @@
       <span>Hold Space and drag: pan</span>
       <span>Q / E: rotate 5°</span>
       <span>Angle field: enter an exact angle</span>
+      <span>Save Track downloads a .moleracing file</span>
+      <span>Load Track opens a saved track file</span>
+      <span>Export SVG creates a clean, full-scale vector file</span>
       <span>Delete / Backspace: remove</span>
       <span>Placement guidance appears while moving or rotating</span>
     </div>

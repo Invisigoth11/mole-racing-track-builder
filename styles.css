@@ -263,3 +263,41 @@ button.active {
   color: rgba(255, 255, 255, 0.35);
   border-bottom-color: rgba(255, 255, 255, 0.12);
 }
+
+
+.track-name-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.track-name-control:focus-within {
+  border-color: rgba(119, 255, 158, 0.75);
+  background: rgba(119, 255, 158, 0.08);
+}
+
+.track-name-control input {
+  width: 150px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28);
+  outline: none;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  padding: 3px 2px;
+}
+
+.tool-divider {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.14);
+  margin: 0 2px;
+}

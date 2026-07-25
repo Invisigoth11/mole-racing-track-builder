@@ -15,6 +15,13 @@
   const barriersLayer = document.getElementById("barriers");
   const overlayLayer = document.getElementById("selectionOverlay");
 
+  const trackNameInput = document.getElementById("trackName");
+  const newTrackButton = document.getElementById("newTrack");
+  const saveTrackButton = document.getElementById("saveTrack");
+  const loadTrackButton = document.getElementById("loadTrack");
+  const exportSvgButton = document.getElementById("exportSvg");
+  const trackFileInput = document.getElementById("trackFileInput");
+
   const addLongButton = document.getElementById("addLong");
   const addShortButton = document.getElementById("addShort");
   const addRedButton = document.getElementById("addRed");
@@ -27,7 +34,13 @@
   const selectionInfo = document.getElementById("selectionInfo");
   const zoomInfo = document.getElementById("zoomInfo");
 
+  const TRACK_FORMAT = "mole-racing-track";
+  const TRACK_VERSION = 1;
+  const AUTOSAVE_KEY = "mole-racing-track-autosave";
+
   const state = {
+    trackName: "Untitled Track",
+    isDirty: false,
     barriers: [],
     selectedId: null,
     view: { x: 0, y: 0, scale: 1 },
@@ -67,6 +80,382 @@
     return barrier.kind === "long" ? "Long Barrier" : "Short Barrier";
   }
 
+  function sanitizeFileName(name) {
+    const cleaned = String(name || "Untitled Track")
+      .trim()
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-")
+      .replace(/\s+/g, " ")
+      .replace(/[.\s]+$/g, "");
+
+    return cleaned || "Untitled Track";
+  }
+
+  function createTrackData() {
+    return {
+      format: TRACK_FORMAT,
+      version: TRACK_VERSION,
+      name: state.trackName || "Untitled Track",
+      savedAt: new Date().toISOString(),
+      barriers: state.barriers.map((barrier) => ({
+        id: barrier.id,
+        kind: barrier.kind,
+        x: barrier.x,
+        y: barrier.y,
+        rotation: barrier.rotation,
+      })),
+      view: {
+        x: state.view.x,
+        y: state.view.y,
+        scale: state.view.scale,
+      },
+      settings: {
+        placementAssist: state.magnetsEnabled,
+      },
+    };
+  }
+
+  function validateTrackData(data) {
+    if (!data || typeof data !== "object") {
+      throw new Error("The selected file does not contain a track.");
+    }
+
+    if (data.format !== TRACK_FORMAT) {
+      throw new Error("This is not a Mole Racing track file.");
+    }
+
+    if (data.version !== TRACK_VERSION) {
+      throw new Error(`Track version ${data.version} is not supported.`);
+    }
+
+    if (!Array.isArray(data.barriers)) {
+      throw new Error("The track has no valid barrier list.");
+    }
+
+    const validKinds = new Set(["long", "short", "red"]);
+    let startFinishCount = 0;
+
+    data.barriers.forEach((barrier, index) => {
+      if (!barrier || !validKinds.has(barrier.kind)) {
+        throw new Error(`Barrier ${index + 1} has an invalid type.`);
+      }
+
+      ["x", "y", "rotation"].forEach((property) => {
+        if (!Number.isFinite(Number(barrier[property]))) {
+          throw new Error(`Barrier ${index + 1} has an invalid ${property} value.`);
+        }
+      });
+
+      if (barrier.kind === "red") startFinishCount += 1;
+    });
+
+    if (startFinishCount > 2) {
+      throw new Error("A track cannot contain more than two Start / Finish barriers.");
+    }
+
+    return data;
+  }
+
+  function autosaveTrack() {
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(createTrackData()));
+    } catch (error) {
+      console.warn("Autosave failed:", error);
+    }
+  }
+
+  function markTrackChanged() {
+    state.isDirty = true;
+    autosaveTrack();
+  }
+
+  function restoreTrack(data, { dirty = false } = {}) {
+    validateTrackData(data);
+
+    state.trackName =
+      typeof data.name === "string" && data.name.trim()
+        ? data.name.trim().slice(0, 80)
+        : "Untitled Track";
+
+    state.barriers = data.barriers.map((barrier, index) => ({
+      id: Number.isInteger(Number(barrier.id))
+        ? Number(barrier.id)
+        : index + 1,
+      kind: barrier.kind,
+      x: Number(barrier.x),
+      y: Number(barrier.y),
+      rotation: ((Number(barrier.rotation) % 360) + 360) % 360,
+    }));
+
+    const highestId = state.barriers.reduce(
+      (highest, barrier) => Math.max(highest, barrier.id),
+      0
+    );
+    state.nextId = highestId + 1;
+    state.selectedId = null;
+    state.drag = null;
+    state.rotate = null;
+    state.pan = null;
+    state.magnetPreview = null;
+
+    if (
+      data.view &&
+      Number.isFinite(Number(data.view.x)) &&
+      Number.isFinite(Number(data.view.y)) &&
+      Number.isFinite(Number(data.view.scale))
+    ) {
+      state.view = {
+        x: Number(data.view.x),
+        y: Number(data.view.y),
+        scale: Math.min(40, Math.max(0.2, Number(data.view.scale))),
+      };
+    }
+
+    state.magnetsEnabled =
+      data.settings?.placementAssist !== false;
+    toggleMagnetsButton.textContent =
+      `Placement Assist: ${state.magnetsEnabled ? "On" : "Off"}`;
+    toggleMagnetsButton.classList.toggle("active", state.magnetsEnabled);
+
+    state.isDirty = dirty;
+    trackNameInput.value = state.trackName;
+    applyView();
+    render();
+    autosaveTrack();
+  }
+
+  function confirmDiscardCurrentTrack() {
+    if (!state.isDirty) return true;
+
+    return window.confirm(
+      "Discard the current track?\n\nUnsaved changes will be lost."
+    );
+  }
+
+  function newTrack() {
+    if (!confirmDiscardCurrentTrack()) return;
+
+    const rect = svg.getBoundingClientRect();
+    state.trackName = "Untitled Track";
+    state.barriers = [];
+    state.nextId = 1;
+    state.selectedId = null;
+    state.magnetPreview = null;
+    state.view = {
+      x: rect.width / 2,
+      y: rect.height / 2,
+      scale: 1,
+    };
+    state.isDirty = false;
+    trackNameInput.value = state.trackName;
+    applyView();
+    render();
+    autosaveTrack();
+  }
+
+  function saveTrack() {
+    state.trackName = trackNameInput.value.trim() || "Untitled Track";
+    trackNameInput.value = state.trackName;
+
+    const data = createTrackData();
+    const blob = new Blob(
+      [JSON.stringify(data, null, 2)],
+      { type: "application/json" }
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${sanitizeFileName(state.trackName)}.moleracing`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    state.isDirty = false;
+    autosaveTrack();
+  }
+
+  async function loadTrackFile(file) {
+    if (!file) return;
+
+    if (!confirmDiscardCurrentTrack()) {
+      trackFileInput.value = "";
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      restoreTrack(data, { dirty: false });
+    } catch (error) {
+      window.alert(`Could not load track.\n\n${error.message}`);
+    } finally {
+      trackFileInput.value = "";
+    }
+  }
+
+  function escapeXml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }
+
+  function formatSvgNumber(value) {
+    const rounded = Math.round(Number(value) * 1000) / 1000;
+    return Object.is(rounded, -0) ? "0" : String(rounded);
+  }
+
+  function exportBarrierType(barrier) {
+    if (barrier.kind === "red") return "start-finish";
+    return barrier.kind === "short" ? "short-barrier" : "long-barrier";
+  }
+
+  function exportBarrierLabel(barrier, number) {
+    if (barrier.kind === "red") return `Start Finish ${number}`;
+    if (barrier.kind === "short") return `Short Barrier ${number}`;
+    return `Long Barrier ${number}`;
+  }
+
+  function createExportBarrierGroup(barrier, number) {
+    const length = barrierLength(barrier);
+    const halfLength = length / 2;
+    const bodyX = -halfLength;
+    const footCenters =
+      barrier.kind === "short"
+        ? [0]
+        : [-halfLength + LONG_FOOT_OFFSET, halfLength - LONG_FOOT_OFFSET];
+
+    const type = exportBarrierType(barrier);
+    const paddedNumber = String(number).padStart(3, "0");
+    const groupId = `${type}-${paddedNumber}`;
+    const label = exportBarrierLabel(barrier, paddedNumber);
+    const fill = barrier.kind === "red" ? "#37B56A" : "#000000";
+
+    const parts = [
+      `    <g id="${groupId}" data-barrier-id="${barrier.id}" transform="translate(${formatSvgNumber(barrier.x)} ${formatSvgNumber(barrier.y)}) rotate(${formatSvgNumber(barrier.rotation)})">`,
+      `      <title>${escapeXml(label)}</title>`,
+      `      <rect id="${groupId}-body" x="${formatSvgNumber(bodyX)}" y="${formatSvgNumber(-BARRIER_THICKNESS / 2)}" width="${formatSvgNumber(length)}" height="${formatSvgNumber(BARRIER_THICKNESS)}" fill="${fill}">`,
+      `        <title>Body</title>`,
+      `      </rect>`,
+    ];
+
+    footCenters.forEach((footX, index) => {
+      const footName =
+        footCenters.length === 1
+          ? "foot"
+          : index === 0
+            ? "foot-left"
+            : "foot-right";
+      const footTitle =
+        footCenters.length === 1
+          ? "Foot"
+          : index === 0
+            ? "Foot Left"
+            : "Foot Right";
+
+      parts.push(
+        `      <rect id="${groupId}-${footName}" x="${formatSvgNumber(footX - BARRIER_THICKNESS / 2)}" y="${formatSvgNumber(-FOOT_LENGTH / 2)}" width="${formatSvgNumber(BARRIER_THICKNESS)}" height="${formatSvgNumber(FOOT_LENGTH)}" fill="${fill}">`,
+        `        <title>${footTitle}</title>`,
+        `      </rect>`
+      );
+    });
+
+    parts.push("    </g>");
+    return parts.join("\n");
+  }
+
+  function calculateTrackBounds() {
+    if (!state.barriers.length) return null;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    state.barriers.forEach((barrier) => {
+      barrierRectangles(barrier).forEach((rectangle) => {
+        rectangle.corners.forEach((point) => {
+          minX = Math.min(minX, point.x);
+          minY = Math.min(minY, point.y);
+          maxX = Math.max(maxX, point.x);
+          maxY = Math.max(maxY, point.y);
+        });
+      });
+    });
+
+    return { minX, minY, maxX, maxY };
+  }
+
+  function createExportSvg() {
+    const bounds = calculateTrackBounds();
+    if (!bounds) {
+      throw new Error("The track is empty.");
+    }
+
+    // 10 SVG units equal 1 cm. A 10-unit margin therefore equals 10 mm.
+    const margin = CM;
+    const minX = bounds.minX - margin;
+    const minY = bounds.minY - margin;
+    const width = bounds.maxX - bounds.minX + margin * 2;
+    const height = bounds.maxY - bounds.minY + margin * 2;
+    const widthCm = width / CM;
+    const heightCm = height / CM;
+
+    const counters = {
+      long: 0,
+      short: 0,
+      red: 0,
+    };
+
+    const barrierGroups = state.barriers.map((barrier) => {
+      counters[barrier.kind] += 1;
+      return createExportBarrierGroup(barrier, counters[barrier.kind]);
+    });
+
+    const title = state.trackName.trim() || "Untitled Track";
+
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      `<svg xmlns="http://www.w3.org/2000/svg"`,
+      `     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"`,
+      `     width="${formatSvgNumber(widthCm)}cm"`,
+      `     height="${formatSvgNumber(heightCm)}cm"`,
+      `     viewBox="${formatSvgNumber(minX)} ${formatSvgNumber(minY)} ${formatSvgNumber(width)} ${formatSvgNumber(height)}"`,
+      `     fill="none">`,
+      `  <title>${escapeXml(title)}</title>`,
+      `  <desc>Mole Racing track. Full scale: 10 SVG units equal 1 cm.</desc>`,
+      `  <g id="track" inkscape:groupmode="layer" inkscape:label="Track">`,
+      barrierGroups.join("\n"),
+      `  </g>`,
+      `</svg>`,
+      ``,
+    ].join("\n");
+  }
+
+  function exportSvg() {
+    try {
+      state.trackName = trackNameInput.value.trim() || "Untitled Track";
+      trackNameInput.value = state.trackName;
+
+      const svgContent = createExportSvg();
+      const blob = new Blob([svgContent], {
+        type: "image/svg+xml;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${sanitizeFileName(state.trackName)}.svg`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      window.alert(`Could not export SVG.\n\n${error.message}`);
+    }
+  }
+
   function addBarrier(kind) {
     if (kind === "red" && state.barriers.filter((b) => b.kind === "red").length >= 2) {
       alert("There are only two Start / Finish barriers in the physical game.");
@@ -86,6 +475,7 @@
 
     state.barriers.push(barrier);
     state.selectedId = barrier.id;
+    markTrackChanged();
     render();
   }
 
@@ -788,6 +1178,7 @@
     if (!state.selectedId) return;
     state.barriers = state.barriers.filter((b) => b.id !== state.selectedId);
     state.selectedId = null;
+    markTrackChanged();
     render();
   }
 
@@ -809,6 +1200,7 @@
     };
     state.barriers.push(copy);
     state.selectedId = copy.id;
+    markTrackChanged();
     render();
   }
 
@@ -817,7 +1209,9 @@
     if (!barrier) return;
 
     barrier.rotation = (barrier.rotation + delta + 360) % 360;
+      markTrackChanged();
     state.magnetPreview = evaluatePlacementFeedback(barrier);
+    markTrackChanged();
     render();
   }
 
@@ -836,8 +1230,28 @@
 
     barrier.rotation = ((angle % 360) + 360) % 360;
     state.magnetPreview = evaluatePlacementFeedback(barrier);
+    markTrackChanged();
     render();
   }
+
+  newTrackButton.addEventListener("click", newTrack);
+  saveTrackButton.addEventListener("click", saveTrack);
+  loadTrackButton.addEventListener("click", () => trackFileInput.click());
+  exportSvgButton.addEventListener("click", exportSvg);
+  trackFileInput.addEventListener("change", () => {
+    loadTrackFile(trackFileInput.files?.[0]);
+  });
+
+  trackNameInput.addEventListener("input", () => {
+    state.trackName = trackNameInput.value;
+    markTrackChanged();
+  });
+
+  trackNameInput.addEventListener("blur", () => {
+    state.trackName = trackNameInput.value.trim() || "Untitled Track";
+    trackNameInput.value = state.trackName;
+    autosaveTrack();
+  });
 
   addLongButton.addEventListener("click", () => addBarrier("long"));
   addShortButton.addEventListener("click", () => addBarrier("short"));
@@ -866,6 +1280,7 @@
       `Placement Assist: ${state.magnetsEnabled ? "On" : "Off"}`;
     toggleMagnetsButton.classList.toggle("active", state.magnetsEnabled);
     state.magnetPreview = null;
+    autosaveTrack();
     render();
   });
 
@@ -913,6 +1328,7 @@
       const adjusted = applyEndMagnetism(barrier, proposedX, proposedY);
       barrier.x = adjusted.x;
       barrier.y = adjusted.y;
+      markTrackChanged();
 
       if (state.magnetPreview && state.magnetPreview.type === "good") {
         const endpoints = endpointPositions(barrier);
@@ -1021,15 +1437,31 @@
     }
   });
 
-  // Initial view and sample barrier.
+  // Restore the latest browser autosave. If none exists, open the sample track.
   requestAnimationFrame(() => {
     const rect = svg.getBoundingClientRect();
     state.view = { x: rect.width / 2, y: rect.height / 2, scale: 1 };
+
+    const autosave = localStorage.getItem(AUTOSAVE_KEY);
+    if (autosave) {
+      try {
+        restoreTrack(JSON.parse(autosave), { dirty: false });
+        return;
+      } catch (error) {
+        console.warn("Could not restore autosave:", error);
+        localStorage.removeItem(AUTOSAVE_KEY);
+      }
+    }
+
+    state.trackName = "Untitled Track";
+    trackNameInput.value = state.trackName;
     state.barriers.push(
       { id: state.nextId++, kind: "long", x: -110, y: 0, rotation: 0 },
       { id: state.nextId++, kind: "short", x: 60, y: 0, rotation: 25 }
     );
+    state.isDirty = false;
     applyView();
     render();
+    autosaveTrack();
   });
 })();
