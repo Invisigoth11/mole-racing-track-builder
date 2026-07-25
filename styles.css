@@ -104,22 +104,22 @@ button:disabled {
 
 .barrier-line {
   stroke: #f5f0e6;
-  stroke-width: 4;
-  stroke-linecap: round;
+  stroke-width: 2;
+  stroke-linecap: butt;
 }
 
 .barrier-line.red {
-  stroke: #ff543e;
+  stroke: #37b56a;
 }
 
 .barrier-foot {
   stroke: #f5f0e6;
-  stroke-width: 3;
-  stroke-linecap: round;
+  stroke-width: 2;
+  stroke-linecap: butt;
 }
 
 .barrier-foot.red {
-  stroke: #ff543e;
+  stroke: #37b56a;
 }
 
 .barrier-hitbox {
@@ -197,24 +197,69 @@ button.active {
   background: #3f6b4a;
   border-color: rgba(190,255,205,0.5);
 }
-.magnet-guide {
-  stroke: rgba(119, 255, 158, 0.95);
-  stroke-width: 3;
-  stroke-linecap: round;
+.placement-circle {
   pointer-events: none;
 }
 
+.placement-circle-good {
+  fill: rgba(119, 255, 158, 0.78);
+  stroke: rgba(70, 220, 115, 1);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
 
-
-
-.overlap-warning-line {
-  stroke: rgba(255, 92, 92, 0.84);
-  stroke-width: 3;
-  stroke-linecap: round;
-  pointer-events: none;
+.placement-circle-overlap {
+  fill: rgba(255, 92, 92, 0.78);
+  stroke: rgba(230, 45, 45, 1);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
 }
 
 
 .rotation-handle:active {
   cursor: grabbing;
+}
+
+
+.angle-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.angle-control:focus-within {
+  border-color: rgba(119, 255, 158, 0.75);
+  background: rgba(119, 255, 158, 0.08);
+}
+
+.angle-control input {
+  width: 58px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28);
+  outline: none;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  text-align: right;
+  padding: 3px 2px;
+  appearance: textfield;
+}
+
+.angle-control input::-webkit-outer-spin-button,
+.angle-control input::-webkit-inner-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.angle-control input:disabled {
+  color: rgba(255, 255, 255, 0.35);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
 }

@@ -20,6 +20,11 @@
       <button id="duplicate">Duplicate</button>
       <button id="delete">Delete</button>
       <button id="toggleMagnets" class="active">Placement Assist: On</button>
+      <label class="angle-control" for="angleInput">
+        <span>Angle</span>
+        <input id="angleInput" type="number" step="0.1" min="-3600" max="3600" disabled />
+        <span>°</span>
+      </label>
       <button id="resetView">Reset View</button>
     </div>
 
@@ -53,6 +58,7 @@
       <span>Mouse wheel / trackpad: zoom</span>
       <span>Hold Space and drag: pan</span>
       <span>Q / E: rotate 5°</span>
+      <span>Angle field: enter an exact angle</span>
       <span>Delete / Backspace: remove</span>
       <span>Placement guidance appears while moving or rotating</span>
     </div>

@@ -7,7 +7,7 @@
   const SHORT_LENGTH = 7.5 * CM;
   const FOOT_LENGTH = 1.9 * CM;
   const LONG_FOOT_OFFSET = 2 * CM;
-  const BARRIER_THICKNESS = 4; // Matches the visible barrier stroke width.
+  const BARRIER_THICKNESS = 2; // Matches the visible barrier stroke width.
   const COLLISION_EPSILON = 0.08;
 
   const svg = document.getElementById("canvas");
@@ -21,6 +21,7 @@
   const duplicateButton = document.getElementById("duplicate");
   const deleteButton = document.getElementById("delete");
   const toggleMagnetsButton = document.getElementById("toggleMagnets");
+  const angleInput = document.getElementById("angleInput");
   const resetViewButton = document.getElementById("resetView");
 
   const selectionInfo = document.getElementById("selectionInfo");
@@ -143,7 +144,77 @@
     };
   }
 
-  function barrierSegments(
+  function rectangleFromLocalCenter(
+    part,
+    centerX,
+    centerY,
+    length,
+    thickness,
+    barrierX,
+    barrierY,
+    barrierRotation,
+    rectangleRotation = barrierRotation
+  ) {
+    // The part's center is positioned in the barrier's local coordinate system.
+    const barrierRadians = barrierRotation * Math.PI / 180;
+    const barrierCos = Math.cos(barrierRadians);
+    const barrierSin = Math.sin(barrierRadians);
+
+    const worldCenter = {
+      x: barrierX + centerX * barrierCos - centerY * barrierSin,
+      y: barrierY + centerX * barrierSin + centerY * barrierCos,
+    };
+
+    // The rectangle itself may be rotated differently, as with perpendicular feet.
+    const rectangleRadians = rectangleRotation * Math.PI / 180;
+    const axisX = Math.cos(rectangleRadians);
+    const axisY = Math.sin(rectangleRadians);
+    const normalX = -axisY;
+    const normalY = axisX;
+
+    const halfLength = length / 2;
+    const halfThickness = thickness / 2;
+
+    const corners = [
+      {
+        x: worldCenter.x - axisX * halfLength - normalX * halfThickness,
+        y: worldCenter.y - axisY * halfLength - normalY * halfThickness,
+      },
+      {
+        x: worldCenter.x + axisX * halfLength - normalX * halfThickness,
+        y: worldCenter.y + axisY * halfLength - normalY * halfThickness,
+      },
+      {
+        x: worldCenter.x + axisX * halfLength + normalX * halfThickness,
+        y: worldCenter.y + axisY * halfLength + normalY * halfThickness,
+      },
+      {
+        x: worldCenter.x - axisX * halfLength + normalX * halfThickness,
+        y: worldCenter.y - axisY * halfLength + normalY * halfThickness,
+      },
+    ];
+
+    return {
+      part,
+      center: worldCenter,
+      axis: { x: axisX, y: axisY },
+      normal: { x: normalX, y: normalY },
+      halfLength,
+      halfThickness,
+      corners,
+      // Kept for the existing red warning marker orientation.
+      a: {
+        x: worldCenter.x - axisX * halfLength,
+        y: worldCenter.y - axisY * halfLength,
+      },
+      b: {
+        x: worldCenter.x + axisX * halfLength,
+        y: worldCenter.y + axisY * halfLength,
+      },
+    };
+  }
+
+  function barrierRectangles(
     barrier,
     x = barrier.x,
     y = barrier.y,
@@ -152,19 +223,17 @@
     const length = barrierLength(barrier);
     const halfLength = length / 2;
 
-    const segments = [
-      {
-        part: "body",
-        thickness: BARRIER_THICKNESS,
-        ...segmentFromLocalPoints(
-          barrier,
-          { x: -halfLength, y: 0 },
-          { x: halfLength, y: 0 },
-          x,
-          y,
-          rotation
-        ),
-      },
+    const rectangles = [
+      rectangleFromLocalCenter(
+        "body",
+        0,
+        0,
+        length,
+        BARRIER_THICKNESS,
+        x,
+        y,
+        rotation
+      ),
     ];
 
     const footCenters =
@@ -173,139 +242,143 @@
         : [-halfLength + LONG_FOOT_OFFSET, halfLength - LONG_FOOT_OFFSET];
 
     footCenters.forEach((footX, index) => {
-      segments.push({
-        part: `foot-${index}`,
-        thickness: 3,
-        ...segmentFromLocalPoints(
-          barrier,
-          { x: footX, y: -FOOT_LENGTH / 2 },
-          { x: footX, y: FOOT_LENGTH / 2 },
+      // A foot is perpendicular to the barrier, so rotate its local rectangle 90°.
+      rectangles.push(
+        rectangleFromLocalCenter(
+          `foot-${index}`,
+          footX,
+          0,
+          FOOT_LENGTH,
+          BARRIER_THICKNESS,
           x,
           y,
-          rotation
-        ),
-      });
+          rotation,
+          rotation + 90
+        )
+      );
     });
 
-    return segments;
+    return rectangles;
   }
 
-  function closestPointOnSegment(point, a, b) {
-    const abX = b.x - a.x;
-    const abY = b.y - a.y;
-    const lengthSquared = abX * abX + abY * abY;
+  function projectCorners(corners, axis) {
+    let min = Infinity;
+    let max = -Infinity;
 
-    if (lengthSquared === 0) return { x: a.x, y: a.y, t: 0 };
+    corners.forEach((point) => {
+      const projection = point.x * axis.x + point.y * axis.y;
+      min = Math.min(min, projection);
+      max = Math.max(max, projection);
+    });
 
-    const t = Math.max(
-      0,
-      Math.min(
-        1,
-        ((point.x - a.x) * abX + (point.y - a.y) * abY) / lengthSquared
-      )
+    return { min, max };
+  }
+
+  function pointInsideRectangle(point, rectangle) {
+    const dx = point.x - rectangle.center.x;
+    const dy = point.y - rectangle.center.y;
+
+    const along = dx * rectangle.axis.x + dy * rectangle.axis.y;
+    const across = dx * rectangle.normal.x + dy * rectangle.normal.y;
+
+    return (
+      Math.abs(along) <= rectangle.halfLength + COLLISION_EPSILON &&
+      Math.abs(across) <= rectangle.halfThickness + COLLISION_EPSILON
     );
-
-    return {
-      x: a.x + t * abX,
-      y: a.y + t * abY,
-      t,
-    };
   }
 
-  function orientation(a, b, c) {
-    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-  }
+  function lineSegmentIntersectionPoint(a, b, c, d) {
+    const rX = b.x - a.x;
+    const rY = b.y - a.y;
+    const sX = d.x - c.x;
+    const sY = d.y - c.y;
+    const denominator = rX * sY - rY * sX;
 
-  function segmentIntersection(first, second) {
-    const x1 = first.a.x;
-    const y1 = first.a.y;
-    const x2 = first.b.x;
-    const y2 = first.b.y;
-    const x3 = second.a.x;
-    const y3 = second.a.y;
-    const x4 = second.b.x;
-    const y4 = second.b.y;
+    if (Math.abs(denominator) < 1e-9) return null;
 
-    const denominator =
-      (x1 - x2) * (y3 - y4) -
-      (y1 - y2) * (x3 - x4);
-
-    if (Math.abs(denominator) < 1e-8) return null;
-
-    const t =
-      ((x1 - x3) * (y3 - y4) -
-        (y1 - y3) * (x3 - x4)) /
-      denominator;
-
-    const u =
-      -(
-        (x1 - x2) * (y1 - y3) -
-        (y1 - y2) * (x1 - x3)
-      ) / denominator;
+    const qpx = c.x - a.x;
+    const qpy = c.y - a.y;
+    const t = (qpx * sY - qpy * sX) / denominator;
+    const u = (qpx * rY - qpy * rX) / denominator;
 
     if (t < 0 || t > 1 || u < 0 || u > 1) return null;
 
     return {
-      x: x1 + t * (x2 - x1),
-      y: y1 + t * (y2 - y1),
+      x: a.x + t * rX,
+      y: a.y + t * rY,
     };
   }
 
-  function closestPointsBetweenSegments(first, second) {
-    const intersection = segmentIntersection(first, second);
+  function rectangleContactCenter(first, second) {
+    const points = [];
 
-    if (intersection) {
+    first.corners.forEach((point) => {
+      if (pointInsideRectangle(point, second)) points.push(point);
+    });
+
+    second.corners.forEach((point) => {
+      if (pointInsideRectangle(point, first)) points.push(point);
+    });
+
+    for (let i = 0; i < 4; i += 1) {
+      const firstA = first.corners[i];
+      const firstB = first.corners[(i + 1) % 4];
+
+      for (let j = 0; j < 4; j += 1) {
+        const secondA = second.corners[j];
+        const secondB = second.corners[(j + 1) % 4];
+        const intersection = lineSegmentIntersectionPoint(
+          firstA,
+          firstB,
+          secondA,
+          secondB
+        );
+
+        if (intersection) points.push(intersection);
+      }
+    }
+
+    if (!points.length) {
       return {
-        first: intersection,
-        second: intersection,
-        distance: 0,
+        x: (first.center.x + second.center.x) / 2,
+        y: (first.center.y + second.center.y) / 2,
       };
     }
 
-    const candidates = [];
+    return {
+      x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+      y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+    };
+  }
 
-    const firstAToSecond = closestPointOnSegment(first.a, second.a, second.b);
-    candidates.push({
-      first: first.a,
-      second: firstAToSecond,
-      distance: Math.hypot(
-        first.a.x - firstAToSecond.x,
-        first.a.y - firstAToSecond.y
-      ),
-    });
+  function rectangleOverlap(first, second) {
+    const axes = [
+      first.axis,
+      first.normal,
+      second.axis,
+      second.normal,
+    ];
 
-    const firstBToSecond = closestPointOnSegment(first.b, second.a, second.b);
-    candidates.push({
-      first: first.b,
-      second: firstBToSecond,
-      distance: Math.hypot(
-        first.b.x - firstBToSecond.x,
-        first.b.y - firstBToSecond.y
-      ),
-    });
+    let smallestPenetration = Infinity;
 
-    const secondAToFirst = closestPointOnSegment(second.a, first.a, first.b);
-    candidates.push({
-      first: secondAToFirst,
-      second: second.a,
-      distance: Math.hypot(
-        second.a.x - secondAToFirst.x,
-        second.a.y - secondAToFirst.y
-      ),
-    });
+    for (const axis of axes) {
+      const firstProjection = projectCorners(first.corners, axis);
+      const secondProjection = projectCorners(second.corners, axis);
 
-    const secondBToFirst = closestPointOnSegment(second.b, first.a, first.b);
-    candidates.push({
-      first: secondBToFirst,
-      second: second.b,
-      distance: Math.hypot(
-        second.b.x - secondBToFirst.x,
-        second.b.y - secondBToFirst.y
-      ),
-    });
+      const penetration =
+        Math.min(firstProjection.max, secondProjection.max) -
+        Math.max(firstProjection.min, secondProjection.min);
 
-    candidates.sort((a, b) => a.distance - b.distance);
-    return candidates[0];
+      // Touching is allowed. Only genuine area overlap triggers red.
+      if (penetration <= COLLISION_EPSILON) return null;
+
+      smallestPenetration = Math.min(smallestPenetration, penetration);
+    }
+
+    return {
+      penetration: smallestPenetration,
+      contact: rectangleContactCenter(first, second),
+    };
   }
 
   function overlapInfo(
@@ -314,43 +387,32 @@
     y = barrier.y,
     rotation = barrier.rotation
   ) {
-    const movingSegments = barrierSegments(barrier, x, y, rotation);
+    const movingRectangles = barrierRectangles(barrier, x, y, rotation);
     let strongestOverlap = null;
 
     state.barriers.forEach((other) => {
       if (other.id === barrier.id) return;
 
-      const otherSegments = barrierSegments(other);
+      const otherRectangles = barrierRectangles(other);
 
-      movingSegments.forEach((movingSegment) => {
-        otherSegments.forEach((otherSegment) => {
-          const closest = closestPointsBetweenSegments(
-            movingSegment,
-            otherSegment
-          );
+      movingRectangles.forEach((movingRectangle) => {
+        otherRectangles.forEach((otherRectangle) => {
+          const overlap = rectangleOverlap(movingRectangle, otherRectangle);
+          if (!overlap) return;
 
-          const overlapThreshold =
-            movingSegment.thickness / 2 +
-            otherSegment.thickness / 2 -
-            COLLISION_EPSILON;
-
-          if (closest.distance < overlapThreshold) {
-            const penetration = overlapThreshold - closest.distance;
-
-            if (
-              !strongestOverlap ||
-              penetration > strongestOverlap.penetration
-            ) {
-              strongestOverlap = {
-                other,
-                first: closest.first,
-                second: closest.second,
-                distance: closest.distance,
-                penetration,
-                movingSegment,
-                otherSegment,
-              };
-            }
+          if (
+            !strongestOverlap ||
+            overlap.penetration > strongestOverlap.penetration
+          ) {
+            strongestOverlap = {
+              other,
+              first: overlap.contact,
+              second: overlap.contact,
+              distance: 0,
+              penetration: overlap.penetration,
+              movingSegment: movingRectangle,
+              otherSegment: otherRectangle,
+            };
           }
         });
       });
@@ -454,7 +516,7 @@
 
     if (!nearest) return null;
 
-    const touchDistance = BARRIER_THICKNESS;
+    const touchDistance = 0;
     const acceptedGap = 2;
     const attractionLimit = touchDistance + acceptedGap;
 
@@ -602,51 +664,36 @@
 
     if (state.magnetPreview) {
       const preview = state.magnetPreview;
-      const dx = preview.to.x - preview.from.x;
-      const dy = preview.to.y - preview.from.y;
-      const distance = Math.hypot(dx, dy);
+      const centerX = (preview.from.x + preview.to.x) / 2;
+      const centerY = (preview.from.y + preview.to.y) / 2;
 
-      if (preview.type === "good" && distance > 0.001) {
-        const ux = dx / distance;
-        const uy = dy / distance;
-        const radius = BARRIER_THICKNESS / 2;
+      if (preview.type === "good") {
+        const distance = Math.hypot(
+          preview.to.x - preview.from.x,
+          preview.to.y - preview.from.y
+        );
 
-        const startX = preview.from.x + ux * radius;
-        const startY = preview.from.y + uy * radius;
-        const endX = preview.to.x - ux * radius;
-        const endY = preview.to.y - uy * radius;
+        // A small circle grows continuously as the two compatible ends approach.
+        // Radius is defined in screen pixels, so it feels consistent at every zoom.
+        const closeness = Math.max(
+          0,
+          Math.min(1, 1 - distance / preview.acceptedGap)
+        );
+        const radiusPixels = 6 + closeness * 18;
 
-        if (Math.hypot(endX - startX, endY - startY) > 0.05) {
-          const guide = createSvgElement("line", {
-            x1: startX,
-            y1: startY,
-            x2: endX,
-            y2: endY,
-            class: "magnet-guide",
-          });
-          overlayLayer.appendChild(guide);
-        }
+        const guide = createSvgElement("circle", {
+          cx: centerX,
+          cy: centerY,
+          r: radiusPixels / state.view.scale,
+          class: "placement-circle placement-circle-good",
+        });
+        overlayLayer.appendChild(guide);
       } else if (preview.type === "overlap") {
-        const centerX = (preview.from.x + preview.to.x) / 2;
-        const centerY = (preview.from.y + preview.to.y) / 2;
-
-        const segment = preview.movingSegment;
-        const segmentDx = segment.b.x - segment.a.x;
-        const segmentDy = segment.b.y - segment.a.y;
-        const segmentLength = Math.hypot(segmentDx, segmentDy) || 1;
-
-        // Draw a short marker perpendicular to the moving barrier part.
-        // Its visual size stays constant at every zoom level.
-        const nx = -segmentDy / segmentLength;
-        const ny = segmentDx / segmentLength;
-        const halfMarker = 6 / state.view.scale;
-
-        const warning = createSvgElement("line", {
-          x1: centerX - nx * halfMarker,
-          y1: centerY - ny * halfMarker,
-          x2: centerX + nx * halfMarker,
-          y2: centerY + ny * halfMarker,
-          class: "overlap-warning-line",
+        const warning = createSvgElement("circle", {
+          cx: centerX,
+          cy: centerY,
+          r: 24 / state.view.scale,
+          class: "placement-circle placement-circle-overlap",
         });
         overlayLayer.appendChild(warning);
       }
@@ -656,17 +703,23 @@
 
     duplicateButton.disabled = !barrier;
     deleteButton.disabled = !barrier;
+    angleInput.disabled = !barrier;
 
     const redCount = state.barriers.filter((b) => b.kind === "red").length;
     addRedButton.disabled = redCount >= 2;
 
     if (!barrier) {
       selectionInfo.textContent = "Nothing selected";
+      angleInput.value = "";
       return;
     }
 
     selectionInfo.textContent =
       `${barrierName(barrier)} · ${Math.round(barrier.rotation)}°`;
+
+    if (document.activeElement !== angleInput) {
+      angleInput.value = String(Math.round(barrier.rotation * 10) / 10);
+    }
 
     const length = barrierLength(barrier);
     const padding = 15;
@@ -768,11 +821,44 @@
     render();
   }
 
+  function applyAngleInput() {
+    const barrier = getSelected();
+    if (!barrier) return;
+
+    const normalizedInput = angleInput.value.trim().replace(",", ".");
+    if (normalizedInput === "") return;
+
+    const angle = Number(normalizedInput);
+    if (!Number.isFinite(angle)) {
+      angleInput.value = String(Math.round(barrier.rotation * 10) / 10);
+      return;
+    }
+
+    barrier.rotation = ((angle % 360) + 360) % 360;
+    state.magnetPreview = evaluatePlacementFeedback(barrier);
+    render();
+  }
+
   addLongButton.addEventListener("click", () => addBarrier("long"));
   addShortButton.addEventListener("click", () => addBarrier("short"));
   addRedButton.addEventListener("click", () => addBarrier("red"));
   deleteButton.addEventListener("click", deleteSelected);
   duplicateButton.addEventListener("click", duplicateSelected);
+  angleInput.addEventListener("change", applyAngleInput);
+  angleInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      applyAngleInput();
+      angleInput.blur();
+    }
+
+    if (event.key === "Escape") {
+      const barrier = getSelected();
+      angleInput.value = barrier
+        ? String(Math.round(barrier.rotation * 10) / 10)
+        : "";
+      angleInput.blur();
+    }
+  });
 
   toggleMagnetsButton.addEventListener("click", () => {
     state.magnetsEnabled = !state.magnetsEnabled;
@@ -882,7 +968,7 @@
     };
 
     const zoomFactor = Math.exp(-event.deltaY * 0.0015);
-    const newScale = Math.min(12, Math.max(0.20, state.view.scale * zoomFactor));
+    const newScale = Math.min(40, Math.max(0.20, state.view.scale * zoomFactor));
 
     state.view.x = mouseX - before.x * newScale;
     state.view.y = mouseY - before.y * newScale;
@@ -891,6 +977,11 @@
   }, { passive: false });
 
   window.addEventListener("keydown", (event) => {
+    const isTyping = event.target instanceof HTMLInputElement ||
+      event.target instanceof HTMLTextAreaElement;
+
+    if (isTyping) return;
+
     if (event.code === "Space") {
       state.spaceDown = true;
       event.preventDefault();
