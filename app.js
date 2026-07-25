@@ -318,10 +318,60 @@
     return `Long Barrier ${number}`;
   }
 
-  function createExportBarrierGroup(barrier, number) {
+  function rotateExportPoint(x, y, angleDegrees) {
+    const angle = (angleDegrees * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    return {
+      x: x * cos - y * sin,
+      y: x * sin + y * cos,
+    };
+  }
+
+  function transformExportPoint(barrier, x, y, offsetX = 0, offsetY = 0) {
+    const rotated = rotateExportPoint(x, y, barrier.rotation);
+    return {
+      x: rotated.x + barrier.x + offsetX,
+      y: rotated.y + barrier.y + offsetY,
+    };
+  }
+
+  function exportRectanglePath(
+    barrier,
+    x,
+    y,
+    width,
+    height,
+    offsetX = 0,
+    offsetY = 0
+  ) {
+    const points = [
+      transformExportPoint(barrier, x, y, offsetX, offsetY),
+      transformExportPoint(barrier, x + width, y, offsetX, offsetY),
+      transformExportPoint(barrier, x + width, y + height, offsetX, offsetY),
+      transformExportPoint(barrier, x, y + height, offsetX, offsetY),
+    ];
+
+    return [
+      `M ${formatSvgNumber(points[0].x)} ${formatSvgNumber(points[0].y)}`,
+      `L ${formatSvgNumber(points[1].x)} ${formatSvgNumber(points[1].y)}`,
+      `L ${formatSvgNumber(points[2].x)} ${formatSvgNumber(points[2].y)}`,
+      `L ${formatSvgNumber(points[3].x)} ${formatSvgNumber(points[3].y)}`,
+      "Z",
+    ].join(" ");
+  }
+
+  function createExportBarrierGroup(
+    barrier,
+    number,
+    offsetX = 0,
+    offsetY = 0
+  ) {
     const length = barrierLength(barrier);
     const halfLength = length / 2;
     const bodyX = -halfLength;
+    const bodyY = -BARRIER_THICKNESS / 2;
     const footCenters =
       barrier.kind === "short"
         ? [0]
@@ -333,37 +383,37 @@
     const label = exportBarrierLabel(barrier, paddedNumber);
     const fill = barrier.kind === "red" ? "#37B56A" : "#000000";
 
-    const parts = [
-      `    <g id="${groupId}" data-barrier-id="${barrier.id}" transform="translate(${formatSvgNumber(barrier.x)} ${formatSvgNumber(barrier.y)}) rotate(${formatSvgNumber(barrier.rotation)})">`,
-      `      <title>${escapeXml(label)}</title>`,
-      `      <rect id="${groupId}-body" x="${formatSvgNumber(bodyX)}" y="${formatSvgNumber(-BARRIER_THICKNESS / 2)}" width="${formatSvgNumber(length)}" height="${formatSvgNumber(BARRIER_THICKNESS)}" fill="${fill}">`,
-      `        <title>Body</title>`,
-      `      </rect>`,
+    const outlinePaths = [
+      exportRectanglePath(
+        barrier,
+        bodyX,
+        bodyY,
+        length,
+        BARRIER_THICKNESS,
+        offsetX,
+        offsetY
+      ),
     ];
 
-    footCenters.forEach((footX, index) => {
-      const footName =
-        footCenters.length === 1
-          ? "foot"
-          : index === 0
-            ? "foot-left"
-            : "foot-right";
-      const footTitle =
-        footCenters.length === 1
-          ? "Foot"
-          : index === 0
-            ? "Foot Left"
-            : "Foot Right";
-
-      parts.push(
-        `      <rect id="${groupId}-${footName}" x="${formatSvgNumber(footX - BARRIER_THICKNESS / 2)}" y="${formatSvgNumber(-FOOT_LENGTH / 2)}" width="${formatSvgNumber(BARRIER_THICKNESS)}" height="${formatSvgNumber(FOOT_LENGTH)}" fill="${fill}">`,
-        `        <title>${footTitle}</title>`,
-        `      </rect>`
+    footCenters.forEach((footX) => {
+      outlinePaths.push(
+        exportRectanglePath(
+          barrier,
+          footX - BARRIER_THICKNESS / 2,
+          -FOOT_LENGTH / 2,
+          BARRIER_THICKNESS,
+          FOOT_LENGTH,
+          offsetX,
+          offsetY
+        )
       );
     });
 
-    parts.push("    </g>");
-    return parts.join("\n");
+    return [
+      `    <g id="${groupId}" data-barrier-id="${barrier.id}">`,
+      `      <path id="${groupId}-outline" d="${outlinePaths.join(" ")}" fill="${fill}" fill-rule="nonzero"/>`,
+      `    </g>`,
+    ].join("\n");
   }
 
   function calculateTrackBounds() {
@@ -396,12 +446,14 @@
 
     // 10 SVG units equal 1 cm. A 10-unit margin therefore equals 10 mm.
     const margin = CM;
-    const minX = bounds.minX - margin;
-    const minY = bounds.minY - margin;
+    const sourceMinX = bounds.minX - margin;
+    const sourceMinY = bounds.minY - margin;
     const width = bounds.maxX - bounds.minX + margin * 2;
     const height = bounds.maxY - bounds.minY + margin * 2;
     const widthCm = width / CM;
     const heightCm = height / CM;
+    const offsetX = -sourceMinX;
+    const offsetY = -sourceMinY;
 
     const counters = {
       long: 0,
@@ -411,7 +463,12 @@
 
     const barrierGroups = state.barriers.map((barrier) => {
       counters[barrier.kind] += 1;
-      return createExportBarrierGroup(barrier, counters[barrier.kind]);
+      return createExportBarrierGroup(
+        barrier,
+        counters[barrier.kind],
+        offsetX,
+        offsetY
+      );
     });
 
     const title = state.trackName.trim() || "Untitled Track";
@@ -419,14 +476,13 @@
     return [
       '<?xml version="1.0" encoding="UTF-8"?>',
       `<svg xmlns="http://www.w3.org/2000/svg"`,
-      `     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"`,
+      `     version="1.1"`,
       `     width="${formatSvgNumber(widthCm)}cm"`,
       `     height="${formatSvgNumber(heightCm)}cm"`,
-      `     viewBox="${formatSvgNumber(minX)} ${formatSvgNumber(minY)} ${formatSvgNumber(width)} ${formatSvgNumber(height)}"`,
-      `     fill="none">`,
+      `     viewBox="0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}">`,
       `  <title>${escapeXml(title)}</title>`,
       `  <desc>Mole Racing track. Full scale: 10 SVG units equal 1 cm.</desc>`,
-      `  <g id="track" inkscape:groupmode="layer" inkscape:label="Track">`,
+      `  <g id="track">`,
       barrierGroups.join("\n"),
       `  </g>`,
       `</svg>`,
