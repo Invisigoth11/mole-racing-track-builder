@@ -1,4 +1,4 @@
-# Mole Racing Track Builder – Prototype 26
+# Mole Racing Track Builder – Prototype 32
 
 Open `index.html` directly in your browser.
 
@@ -39,3 +39,67 @@ Note: Adobe InDesign places an SVG as one linked graphic. The internal barrier g
 - Inkscape-specific namespace and layer attributes have been removed.
 - Hidden construction geometry has been removed from the export.
 - Each barrier remains a separate named group containing one combined outline path.
+
+## Multi-selection
+
+- Shift-click a barrier to add it to or remove it from the current selection.
+- Drag any selected barrier to move the entire selection together.
+- Relative positions and rotations are preserved during group movement.
+- Placement Assist is bypassed while multiple barriers are moved.
+- Delete or Backspace removes every selected barrier.
+- Clicking empty canvas space clears the complete selection.
+- The most recently selected barrier remains active for the angle field and rotation handle.
+
+## Marquee selection
+
+- Click and drag on empty canvas space to draw a blue selection rectangle.
+- Every barrier touched by the rectangle is selected.
+- Shift-drag adds touched barriers to the existing selection.
+- Dragging without Shift replaces the previous selection.
+- The behavior is identical in every drag direction.
+
+## Group rotation
+
+- Multiple selected barriers now receive one shared bounding box and rotation handle.
+- Drag the shared handle to rotate the complete selection around its center.
+- Relative positions and individual barrier angles are preserved within the rotating group.
+- Hold Shift while rotating to snap the group rotation to 15-degree increments.
+- Placement Assist is bypassed during group rotation.
+
+## Group angle input
+
+- The angle field now rotates the complete selection when several barriers are selected.
+- The entered value becomes the angle of the active barrier.
+- Every selected barrier rotates by the same difference around the group center.
+- Relative positions and relative angles are preserved.
+
+## Keyboard shortcuts
+
+Mac shortcuts use Command. Windows shortcuts use Ctrl.
+
+- Command/Ctrl + Z: Undo
+- Shift + Command + Z or Ctrl + Y: Redo
+- Command/Ctrl + C: Copy the selected barriers
+- Command/Ctrl + V: Paste and select the copies
+- Command/Ctrl + A: Select all barriers
+- Command/Ctrl + D: Duplicate the selected barriers
+- Escape: Clear the selection
+- Delete or Backspace: Delete the selection
+- Arrow keys: Move the selection by 1 mm
+- Shift + Arrow keys: Move the selection by 10 mm
+- Q / E: Rotate by 5 degrees
+- Shift + Q / E: Rotate by 15 degrees
+
+Copy and paste preserve the complete selected group. Each repeated paste is offset
+a further 20 mm diagonally so the copies remain visible.
+
+## Barrier counter
+
+The toolbar now displays a live count of:
+
+- Long barriers
+- Short barriers
+- Start / Finish barriers
+
+The counter updates immediately when barriers are added, deleted, pasted,
+duplicated, loaded, undone, or redone.

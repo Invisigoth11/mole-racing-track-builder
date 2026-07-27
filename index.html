@@ -39,8 +39,27 @@
     </div>
 
     <div class="status">
-      <span id="selectionInfo">Nothing selected</span>
-      <span id="zoomInfo">100%</span>
+      <div class="barrier-counter" aria-label="Barrier usage">
+        <span class="counter-item">
+          <span class="counter-swatch counter-swatch-long" aria-hidden="true"></span>
+          <span>Long</span>
+          <strong id="longBarrierCount">0</strong>
+        </span>
+        <span class="counter-item">
+          <span class="counter-swatch counter-swatch-short" aria-hidden="true"></span>
+          <span>Short</span>
+          <strong id="shortBarrierCount">0</strong>
+        </span>
+        <span class="counter-item">
+          <span class="counter-swatch counter-swatch-start" aria-hidden="true"></span>
+          <span>Start</span>
+          <strong id="startBarrierCount">0</strong>
+        </span>
+      </div>
+      <div class="status-details">
+        <span id="selectionInfo">Nothing selected</span>
+        <span id="zoomInfo">100%</span>
+      </div>
     </div>
   </header>
 

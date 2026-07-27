@@ -33,6 +33,9 @@
 
   const selectionInfo = document.getElementById("selectionInfo");
   const zoomInfo = document.getElementById("zoomInfo");
+  const longBarrierCount = document.getElementById("longBarrierCount");
+  const shortBarrierCount = document.getElementById("shortBarrierCount");
+  const startBarrierCount = document.getElementById("startBarrierCount");
 
   const TRACK_FORMAT = "mole-racing-track";
   const TRACK_VERSION = 1;
@@ -43,6 +46,7 @@
     isDirty: false,
     barriers: [],
     selectedId: null,
+    selectedIds: [],
     view: { x: 0, y: 0, scale: 1 },
     drag: null,
     pan: null,
@@ -51,7 +55,146 @@
     nextId: 1,
     magnetsEnabled: true,
     magnetPreview: null,
+    clipboard: [],
+    pasteCount: 0,
+    undoStack: [],
+    redoStack: [],
+    interactionHistoryCaptured: false,
   };
+
+  function createHistorySnapshot() {
+    return {
+      trackName: state.trackName,
+      barriers: state.barriers.map((barrier) => ({ ...barrier })),
+      selectedId: state.selectedId,
+      selectedIds: [...state.selectedIds],
+      nextId: state.nextId,
+    };
+  }
+
+  function snapshotSignature(snapshot) {
+    return JSON.stringify(snapshot);
+  }
+
+  function pushUndoState() {
+    const snapshot = createHistorySnapshot();
+    const previous = state.undoStack.at(-1);
+
+    if (!previous || snapshotSignature(previous) !== snapshotSignature(snapshot)) {
+      state.undoStack.push(snapshot);
+      if (state.undoStack.length > 100) state.undoStack.shift();
+    }
+
+    state.redoStack = [];
+  }
+
+  function restoreHistorySnapshot(snapshot) {
+    state.trackName = snapshot.trackName;
+    state.barriers = snapshot.barriers.map((barrier) => ({ ...barrier }));
+    state.selectedId = snapshot.selectedId;
+    state.selectedIds = [...snapshot.selectedIds];
+    state.nextId = snapshot.nextId;
+    state.drag = null;
+    state.marquee = null;
+    state.pan = null;
+    state.rotate = null;
+    state.magnetPreview = null;
+    state.interactionHistoryCaptured = false;
+    trackNameInput.value = state.trackName;
+    markTrackChanged();
+    render();
+  }
+
+  function undo() {
+    const snapshot = state.undoStack.pop();
+    if (!snapshot) return;
+
+    state.redoStack.push(createHistorySnapshot());
+    restoreHistorySnapshot(snapshot);
+  }
+
+  function redo() {
+    const snapshot = state.redoStack.pop();
+    if (!snapshot) return;
+
+    state.undoStack.push(createHistorySnapshot());
+    restoreHistorySnapshot(snapshot);
+  }
+
+  function copySelected() {
+    const selectedBarriers = getSelectedBarriers();
+    if (selectedBarriers.length === 0) return;
+
+    state.clipboard = selectedBarriers.map((barrier) => ({
+      kind: barrier.kind,
+      x: barrier.x,
+      y: barrier.y,
+      rotation: barrier.rotation,
+    }));
+    state.pasteCount = 0;
+  }
+
+  function pasteClipboard() {
+    if (state.clipboard.length === 0) return;
+
+    const existingRedCount = state.barriers.filter(
+      (barrier) => barrier.kind === "red"
+    ).length;
+    const clipboardRedCount = state.clipboard.filter(
+      (barrier) => barrier.kind === "red"
+    ).length;
+
+    if (existingRedCount + clipboardRedCount > 2) {
+      alert("There are only two Start / Finish barriers in the physical game.");
+      return;
+    }
+
+    pushUndoState();
+    state.pasteCount += 1;
+    const offset = 20 * state.pasteCount;
+
+    const pasted = state.clipboard.map((barrier) => ({
+      ...barrier,
+      id: state.nextId++,
+      x: barrier.x + offset,
+      y: barrier.y + offset,
+    }));
+
+    state.barriers.push(...pasted);
+    state.selectedIds = pasted.map((barrier) => barrier.id);
+    state.selectedId = state.selectedIds.at(-1) ?? null;
+    state.magnetPreview = null;
+    markTrackChanged();
+    render();
+  }
+
+  function selectAllBarriers() {
+    state.selectedIds = state.barriers.map((barrier) => barrier.id);
+    state.selectedId = state.selectedIds.at(-1) ?? null;
+    state.magnetPreview = null;
+    renderSelection();
+  }
+
+  function clearSelection() {
+    selectOnly(null);
+    state.magnetPreview = null;
+    renderSelection();
+  }
+
+  function moveSelectedBy(deltaX, deltaY) {
+    const selectedBarriers = getSelectedBarriers();
+    if (selectedBarriers.length === 0) return;
+
+    pushUndoState();
+    selectedBarriers.forEach((barrier) => {
+      barrier.x += deltaX;
+      barrier.y += deltaY;
+    });
+
+    state.magnetPreview = null;
+    markTrackChanged();
+    render();
+  }
 
   function createSvgElement(tag, attrs = {}) {
     const el = document.createElementNS(SVG_NS, tag);
@@ -192,6 +335,7 @@
     );
     state.nextId = highestId + 1;
     state.selectedId = null;
+    state.selectedIds = [];
     state.drag = null;
     state.rotate = null;
     state.pan = null;
@@ -217,6 +361,10 @@
     toggleMagnetsButton.classList.toggle("active", state.magnetsEnabled);
 
     state.isDirty = dirty;
+    state.undoStack = [];
+    state.redoStack = [];
+    state.clipboard = [];
+    state.pasteCount = 0;
     trackNameInput.value = state.trackName;
     applyView();
     render();
@@ -239,6 +387,7 @@
     state.barriers = [];
     state.nextId = 1;
     state.selectedId = null;
+    state.selectedIds = [];
     state.magnetPreview = null;
     state.view = {
       x: rect.width / 2,
@@ -246,6 +395,10 @@
       scale: 1,
     };
     state.isDirty = false;
+    state.undoStack = [];
+    state.redoStack = [];
+    state.clipboard = [];
+    state.pasteCount = 0;
     trackNameInput.value = state.trackName;
     applyView();
     render();
@@ -518,6 +671,8 @@
       return;
     }
 
+    pushUndoState();
+
     const rect = svg.getBoundingClientRect();
     const center = screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
 
@@ -530,13 +685,217 @@
     };
 
     state.barriers.push(barrier);
-    state.selectedId = barrier.id;
+    selectOnly(barrier.id);
     markTrackChanged();
     render();
   }
 
   function getSelected() {
     return state.barriers.find((b) => b.id === state.selectedId) || null;
+  }
+
+  function getSelectedBarriers() {
+    const selected = new Set(state.selectedIds);
+    return state.barriers.filter((barrier) => selected.has(barrier.id));
+  }
+
+  function isBarrierSelected(id) {
+    return state.selectedIds.includes(id);
+  }
+
+  function selectOnly(id) {
+    state.selectedId = id;
+    state.selectedIds = id == null ? [] : [id];
+  }
+
+  function toggleSelection(id) {
+    if (isBarrierSelected(id)) {
+      state.selectedIds = state.selectedIds.filter((selectedId) => selectedId !== id);
+      if (state.selectedId === id) {
+        state.selectedId = state.selectedIds.at(-1) ?? null;
+      }
+      return false;
+    }
+
+    state.selectedIds.push(id);
+    state.selectedId = id;
+    return true;
+  }
+
+  function normalizeRect(x1, y1, x2, y2) {
+    return {
+      minX: Math.min(x1, x2),
+      minY: Math.min(y1, y2),
+      maxX: Math.max(x1, x2),
+      maxY: Math.max(y1, y2),
+    };
+  }
+
+  function pointInRect(point, rect) {
+    return (
+      point.x >= rect.minX &&
+      point.x <= rect.maxX &&
+      point.y >= rect.minY &&
+      point.y <= rect.maxY
+    );
+  }
+
+  function pointInPolygon(point, polygon) {
+    let inside = false;
+
+    for (
+      let i = 0, j = polygon.length - 1;
+      i < polygon.length;
+      j = i, i += 1
+    ) {
+      const xi = polygon[i].x;
+      const yi = polygon[i].y;
+      const xj = polygon[j].x;
+      const yj = polygon[j].y;
+
+      const intersects =
+        yi > point.y !== yj > point.y &&
+        point.x <
+          ((xj - xi) * (point.y - yi)) / ((yj - yi) || 0.000001) + xi;
+
+      if (intersects) inside = !inside;
+    }
+
+    return inside;
+  }
+
+  function orientation(a, b, c) {
+    const value =
+      (b.y - a.y) * (c.x - b.x) -
+      (b.x - a.x) * (c.y - b.y);
+
+    if (Math.abs(value) < 0.000001) return 0;
+    return value > 0 ? 1 : 2;
+  }
+
+  function onSegment(a, b, c) {
+    return (
+      b.x <= Math.max(a.x, c.x) + 0.000001 &&
+      b.x + 0.000001 >= Math.min(a.x, c.x) &&
+      b.y <= Math.max(a.y, c.y) + 0.000001 &&
+      b.y + 0.000001 >= Math.min(a.y, c.y)
+    );
+  }
+
+  function segmentsIntersect(a1, a2, b1, b2) {
+    const o1 = orientation(a1, a2, b1);
+    const o2 = orientation(a1, a2, b2);
+    const o3 = orientation(b1, b2, a1);
+    const o4 = orientation(b1, b2, a2);
+
+    if (o1 !== o2 && o3 !== o4) return true;
+    if (o1 === 0 && onSegment(a1, b1, a2)) return true;
+    if (o2 === 0 && onSegment(a1, b2, a2)) return true;
+    if (o3 === 0 && onSegment(b1, a1, b2)) return true;
+    if (o4 === 0 && onSegment(b1, a2, b2)) return true;
+    return false;
+  }
+
+  function polygonTouchesRect(polygon, rect) {
+    if (polygon.some((point) => pointInRect(point, rect))) {
+      return true;
+    }
+
+    const rectPoints = [
+      { x: rect.minX, y: rect.minY },
+      { x: rect.maxX, y: rect.minY },
+      { x: rect.maxX, y: rect.maxY },
+      { x: rect.minX, y: rect.maxY },
+    ];
+
+    if (rectPoints.some((point) => pointInPolygon(point, polygon))) {
+      return true;
+    }
+
+    for (let i = 0; i < polygon.length; i += 1) {
+      const polygonStart = polygon[i];
+      const polygonEnd = polygon[(i + 1) % polygon.length];
+
+      for (let j = 0; j < rectPoints.length; j += 1) {
+        const rectStart = rectPoints[j];
+        const rectEnd = rectPoints[(j + 1) % rectPoints.length];
+
+        if (segmentsIntersect(polygonStart, polygonEnd, rectStart, rectEnd)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function localRectanglePolygon(barrier, x, y, width, height) {
+    const angle = (barrier.rotation * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    return [
+      { x, y },
+      { x: x + width, y },
+      { x: x + width, y: y + height },
+      { x, y: y + height },
+    ].map((point) => ({
+      x: barrier.x + point.x * cos - point.y * sin,
+      y: barrier.y + point.x * sin + point.y * cos,
+    }));
+  }
+
+  function barrierPolygons(barrier) {
+    const length = barrierLength(barrier);
+    const halfLength = length / 2;
+
+    const polygons = [
+      localRectanglePolygon(
+        barrier,
+        -halfLength,
+        -BARRIER_THICKNESS / 2,
+        length,
+        BARRIER_THICKNESS
+      ),
+    ];
+
+    const footCenters =
+      barrier.kind === "short"
+        ? [0]
+        : [-halfLength + LONG_FOOT_OFFSET, halfLength - LONG_FOOT_OFFSET];
+
+    footCenters.forEach((footX) => {
+      polygons.push(
+        localRectanglePolygon(
+          barrier,
+          footX - BARRIER_THICKNESS / 2,
+          -FOOT_LENGTH / 2,
+          BARRIER_THICKNESS,
+          FOOT_LENGTH
+        )
+      );
+    });
+
+    return polygons;
+  }
+
+  function barrierTouchesRect(barrier, rect) {
+    return barrierPolygons(barrier).some((polygon) =>
+      polygonTouchesRect(polygon, rect)
+    );
+  }
+
+  function selectedBarrierBounds(barriers) {
+    const points = barriers.flatMap((barrier) =>
+      barrierPolygons(barrier).flat()
+    );
+
+    return {
+      minX: Math.min(...points.map((point) => point.x)),
+      minY: Math.min(...points.map((point) => point.y)),
+      maxX: Math.max(...points.map((point) => point.x)),
+      maxY: Math.max(...points.map((point) => point.y)),
+    };
   }
 
   function barrierLength(barrier) {
@@ -1089,13 +1448,35 @@
       if (state.spaceDown || event.button === 1) return;
 
       event.stopPropagation();
-      state.selectedId = barrier.id;
+
+      if (event.shiftKey) {
+        const wasAdded = toggleSelection(barrier.id);
+        if (!wasAdded) {
+          state.drag = null;
+          render();
+          return;
+        }
+      } else if (!isBarrierSelected(barrier.id)) {
+        selectOnly(barrier.id);
+      } else {
+        state.selectedId = barrier.id;
+      }
 
       const world = screenToWorld(event.clientX, event.clientY);
+      const selectedBarriers = getSelectedBarriers();
+
+      pushUndoState();
+      state.interactionHistoryCaptured = true;
+
       state.drag = {
-        id: barrier.id,
-        offsetX: world.x - barrier.x,
-        offsetY: world.y - barrier.y,
+        anchorId: barrier.id,
+        startWorldX: world.x,
+        startWorldY: world.y,
+        positions: selectedBarriers.map((selectedBarrier) => ({
+          id: selectedBarrier.id,
+          x: selectedBarrier.x,
+          y: selectedBarrier.y,
+        })),
       };
 
       svg.setPointerCapture(event.pointerId);
@@ -1145,73 +1526,183 @@
       }
     }
 
+    if (state.marquee) {
+      const rect = normalizeRect(
+        state.marquee.startX,
+        state.marquee.startY,
+        state.marquee.currentX,
+        state.marquee.currentY
+      );
+
+      overlayLayer.appendChild(
+        createSvgElement("rect", {
+          x: rect.minX,
+          y: rect.minY,
+          width: rect.maxX - rect.minX,
+          height: rect.maxY - rect.minY,
+          class: "marquee-selection",
+        })
+      );
+    }
+
     const barrier = getSelected();
+    const selectedBarriers = getSelectedBarriers();
 
     duplicateButton.disabled = !barrier;
-    deleteButton.disabled = !barrier;
+    deleteButton.disabled = selectedBarriers.length === 0;
     angleInput.disabled = !barrier;
 
     const redCount = state.barriers.filter((b) => b.kind === "red").length;
     addRedButton.disabled = redCount >= 2;
 
-    if (!barrier) {
+    if (!barrier || selectedBarriers.length === 0) {
       selectionInfo.textContent = "Nothing selected";
       angleInput.value = "";
       return;
     }
 
     selectionInfo.textContent =
-      `${barrierName(barrier)} · ${Math.round(barrier.rotation)}°`;
+      selectedBarriers.length === 1
+        ? `${barrierName(barrier)} · ${Math.round(barrier.rotation)}°`
+        : `${selectedBarriers.length} barriers selected · ${Math.round(barrier.rotation * 10) / 10}°`;
 
     if (document.activeElement !== angleInput) {
       angleInput.value = String(Math.round(barrier.rotation * 10) / 10);
     }
 
-    const length = barrierLength(barrier);
-    const padding = 15;
-    const box = createSvgElement("rect", {
-      x: -length / 2 - padding,
-      y: -FOOT_LENGTH / 2 - padding,
-      width: length + padding * 2,
-      height: FOOT_LENGTH + padding * 2,
-      rx: 5,
-      class: "selection-box",
+    selectedBarriers.forEach((selectedBarrier) => {
+      const length = barrierLength(selectedBarrier);
+      const padding = 15;
+      const box = createSvgElement("rect", {
+        x: -length / 2 - padding,
+        y: -FOOT_LENGTH / 2 - padding,
+        width: length + padding * 2,
+        height: FOOT_LENGTH + padding * 2,
+        rx: 5,
+        class: "selection-box",
+      });
+
+      const selectionGroup = createSvgElement("g", {
+        transform:
+          `translate(${selectedBarrier.x} ${selectedBarrier.y}) ` +
+          `rotate(${selectedBarrier.rotation})`,
+      });
+      selectionGroup.appendChild(box);
+      overlayLayer.appendChild(selectionGroup);
     });
 
-    const handleDistance = FOOT_LENGTH / 2 + 45;
-    const handleLine = createSvgElement("line", {
-      x1: 0,
-      y1: -FOOT_LENGTH / 2 - padding,
-      x2: 0,
-      y2: -handleDistance,
-      class: "rotation-line",
-    });
+    if (selectedBarriers.length > 1) {
+      const bounds = selectedBarrierBounds(selectedBarriers);
+      const padding = 18;
+      const minX = bounds.minX - padding;
+      const minY = bounds.minY - padding;
+      const maxX = bounds.maxX + padding;
+      const maxY = bounds.maxY + padding;
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      const handleY = minY - 45;
 
-    const handle = createSvgElement("circle", {
-      cx: 0,
-      cy: -handleDistance,
-      r: 9,
-      class: "rotation-handle",
-    });
+      overlayLayer.appendChild(
+        createSvgElement("rect", {
+          x: minX,
+          y: minY,
+          width: maxX - minX,
+          height: maxY - minY,
+          rx: 5,
+          class: "selection-box group-selection-box",
+        })
+      );
 
-    const group = createSvgElement("g", {
-      transform: `translate(${barrier.x} ${barrier.y}) rotate(${barrier.rotation})`,
-    });
+      overlayLayer.appendChild(
+        createSvgElement("line", {
+          x1: centerX,
+          y1: minY,
+          x2: centerX,
+          y2: handleY,
+          class: "rotation-line",
+        })
+      );
 
-    group.append(box, handleLine, handle);
+      const handle = createSvgElement("circle", {
+        cx: centerX,
+        cy: handleY,
+        r: 9,
+        class: "rotation-handle",
+      });
 
-    handle.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-      const centerScreen = worldToScreen(barrier.x, barrier.y);
-      state.rotate = {
-        id: barrier.id,
-        centerX: centerScreen.x,
-        centerY: centerScreen.y,
-      };
-      svg.setPointerCapture(event.pointerId);
-    });
+      handle.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
 
-    overlayLayer.appendChild(group);
+        const centerScreen = worldToScreen(centerX, centerY);
+        const startPointerAngle = Math.atan2(
+          event.clientY - centerScreen.y,
+          event.clientX - centerScreen.x
+        );
+
+        pushUndoState();
+        state.interactionHistoryCaptured = true;
+
+        state.rotate = {
+          type: "group",
+          centerX,
+          centerY,
+          centerScreenX: centerScreen.x,
+          centerScreenY: centerScreen.y,
+          startPointerAngle,
+          barriers: selectedBarriers.map((selectedBarrier) => ({
+            id: selectedBarrier.id,
+            x: selectedBarrier.x,
+            y: selectedBarrier.y,
+            rotation: selectedBarrier.rotation,
+          })),
+        };
+
+        svg.setPointerCapture(event.pointerId);
+      });
+
+      overlayLayer.appendChild(handle);
+    } else {
+      const length = barrierLength(barrier);
+      const padding = 15;
+      const handleDistance = FOOT_LENGTH / 2 + 45;
+      const handleLine = createSvgElement("line", {
+        x1: 0,
+        y1: -FOOT_LENGTH / 2 - padding,
+        x2: 0,
+        y2: -handleDistance,
+        class: "rotation-line",
+      });
+
+      const handle = createSvgElement("circle", {
+        cx: 0,
+        cy: -handleDistance,
+        r: 9,
+        class: "rotation-handle",
+      });
+
+      const group = createSvgElement("g", {
+        transform: `translate(${barrier.x} ${barrier.y}) rotate(${barrier.rotation})`,
+      });
+
+      group.append(handleLine, handle);
+
+      handle.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        const centerScreen = worldToScreen(barrier.x, barrier.y);
+        pushUndoState();
+        state.interactionHistoryCaptured = true;
+
+        state.rotate = {
+          type: "single",
+          id: barrier.id,
+          centerX: centerScreen.x,
+          centerY: centerScreen.y,
+        };
+        svg.setPointerCapture(event.pointerId);
+      });
+
+      overlayLayer.appendChild(group);
+    }
   }
 
   function worldToScreen(x, y) {
@@ -1222,7 +1713,24 @@
     };
   }
 
+  function renderBarrierCounter() {
+    const counts = state.barriers.reduce(
+      (result, barrier) => {
+        if (barrier.kind === "long") result.long += 1;
+        if (barrier.kind === "short") result.short += 1;
+        if (barrier.kind === "red") result.start += 1;
+        return result;
+      },
+      { long: 0, short: 0, start: 0 }
+    );
+
+    longBarrierCount.textContent = String(counts.long);
+    shortBarrierCount.textContent = String(counts.short);
+    startBarrierCount.textContent = String(counts.start);
+  }
+
   function render() {
+    renderBarrierCounter();
     barriersLayer.innerHTML = "";
     state.barriers.forEach((barrier) => {
       barriersLayer.appendChild(createBarrierGroup(barrier));
@@ -1231,61 +1739,143 @@
   }
 
   function deleteSelected() {
-    if (!state.selectedId) return;
-    state.barriers = state.barriers.filter((b) => b.id !== state.selectedId);
-    state.selectedId = null;
+    if (state.selectedIds.length === 0) return;
+    pushUndoState();
+    const selected = new Set(state.selectedIds);
+    state.barriers = state.barriers.filter((barrier) => !selected.has(barrier.id));
+    selectOnly(null);
     markTrackChanged();
     render();
   }
 
   function duplicateSelected() {
-    const barrier = getSelected();
-    if (!barrier) return;
+    const selectedBarriers = getSelectedBarriers();
+    if (selectedBarriers.length === 0) return;
 
-    if (barrier.kind === "red" &&
-        state.barriers.filter((b) => b.kind === "red").length >= 2) {
+    const existingRedCount = state.barriers.filter(
+      (barrier) => barrier.kind === "red"
+    ).length;
+    const selectedRedCount = selectedBarriers.filter(
+      (barrier) => barrier.kind === "red"
+    ).length;
+
+    if (existingRedCount + selectedRedCount > 2) {
       alert("There are only two Start / Finish barriers in the physical game.");
       return;
     }
 
-    const copy = {
+    pushUndoState();
+
+    const copies = selectedBarriers.map((barrier) => ({
       ...barrier,
       id: state.nextId++,
       x: barrier.x + 30,
       y: barrier.y + 30,
-    };
-    state.barriers.push(copy);
-    state.selectedId = copy.id;
+    }));
+
+    state.barriers.push(...copies);
+    state.selectedIds = copies.map((barrier) => barrier.id);
+    state.selectedId = state.selectedIds.at(-1) ?? null;
+    state.magnetPreview = null;
     markTrackChanged();
     render();
   }
 
   function rotateSelected(delta) {
-    const barrier = getSelected();
-    if (!barrier) return;
+    const selectedBarriers = getSelectedBarriers();
+    const activeBarrier = getSelected();
+    if (!activeBarrier || selectedBarriers.length === 0) return;
 
-    barrier.rotation = (barrier.rotation + delta + 360) % 360;
+    pushUndoState();
+
+    if (selectedBarriers.length === 1) {
+      activeBarrier.rotation =
+        (activeBarrier.rotation + delta + 360) % 360;
+      state.magnetPreview = evaluatePlacementFeedback(activeBarrier);
       markTrackChanged();
-    state.magnetPreview = evaluatePlacementFeedback(barrier);
+      render();
+      return;
+    }
+
+    pushUndoState();
+
+    const bounds = selectedBarrierBounds(selectedBarriers);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    const radians = delta * Math.PI / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+
+    selectedBarriers.forEach((barrier) => {
+      const relativeX = barrier.x - centerX;
+      const relativeY = barrier.y - centerY;
+
+      barrier.x = centerX + relativeX * cos - relativeY * sin;
+      barrier.y = centerY + relativeX * sin + relativeY * cos;
+      barrier.rotation = (barrier.rotation + delta + 360) % 360;
+    });
+
+    state.magnetPreview = null;
     markTrackChanged();
     render();
   }
 
   function applyAngleInput() {
-    const barrier = getSelected();
-    if (!barrier) return;
+    const activeBarrier = getSelected();
+    const selectedBarriers = getSelectedBarriers();
+    if (!activeBarrier || selectedBarriers.length === 0) return;
 
     const normalizedInput = angleInput.value.trim().replace(",", ".");
     if (normalizedInput === "") return;
 
     const angle = Number(normalizedInput);
     if (!Number.isFinite(angle)) {
-      angleInput.value = String(Math.round(barrier.rotation * 10) / 10);
+      angleInput.value = String(
+        Math.round(activeBarrier.rotation * 10) / 10
+      );
       return;
     }
 
-    barrier.rotation = ((angle % 360) + 360) % 360;
-    state.magnetPreview = evaluatePlacementFeedback(barrier);
+    const targetAngle = ((angle % 360) + 360) % 360;
+
+    if (selectedBarriers.length === 1) {
+      pushUndoState();
+      activeBarrier.rotation = targetAngle;
+      state.magnetPreview = evaluatePlacementFeedback(activeBarrier);
+      markTrackChanged();
+      render();
+      return;
+    }
+
+    const bounds = selectedBarrierBounds(selectedBarriers);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+
+    let deltaDegrees = targetAngle - activeBarrier.rotation;
+    if (deltaDegrees > 180) deltaDegrees -= 360;
+    if (deltaDegrees < -180) deltaDegrees += 360;
+
+    const deltaRadians = deltaDegrees * Math.PI / 180;
+    const cos = Math.cos(deltaRadians);
+    const sin = Math.sin(deltaRadians);
+
+    selectedBarriers.forEach((barrier) => {
+      const relativeX = barrier.x - centerX;
+      const relativeY = barrier.y - centerY;
+
+      barrier.x =
+        centerX +
+        relativeX * cos -
+        relativeY * sin;
+      barrier.y =
+        centerY +
+        relativeX * sin +
+        relativeY * cos;
+      barrier.rotation =
+        (barrier.rotation + deltaDegrees + 360) % 360;
+    });
+
+    state.magnetPreview = null;
     markTrackChanged();
     render();
   }
@@ -1363,7 +1953,23 @@
       return;
     }
 
-    state.selectedId = null;
+    if (event.button !== 0) return;
+
+    const world = screenToWorld(event.clientX, event.clientY);
+    state.marquee = {
+      startX: world.x,
+      startY: world.y,
+      currentX: world.x,
+      currentY: world.y,
+      additive: event.shiftKey,
+      originalIds: [...state.selectedIds],
+    };
+
+    if (!event.shiftKey) {
+      selectOnly(null);
+    }
+
+    svg.setPointerCapture(event.pointerId);
     renderSelection();
   });
 
@@ -1375,30 +1981,115 @@
       return;
     }
 
-    if (state.drag) {
-      const barrier = state.barriers.find((b) => b.id === state.drag.id);
-      if (!barrier) return;
+    if (state.marquee) {
       const world = screenToWorld(event.clientX, event.clientY);
-      const proposedX = world.x - state.drag.offsetX;
-      const proposedY = world.y - state.drag.offsetY;
-      const adjusted = applyEndMagnetism(barrier, proposedX, proposedY);
-      barrier.x = adjusted.x;
-      barrier.y = adjusted.y;
-      markTrackChanged();
+      state.marquee.currentX = world.x;
+      state.marquee.currentY = world.y;
 
-      if (state.magnetPreview && state.magnetPreview.type === "good") {
-        const endpoints = endpointPositions(barrier);
-        state.magnetPreview.from =
-          state.magnetPreview.movingSide === "start"
-            ? endpoints[0]
-            : endpoints[1];
+      const rect = normalizeRect(
+        state.marquee.startX,
+        state.marquee.startY,
+        state.marquee.currentX,
+        state.marquee.currentY
+      );
+
+      const touchedIds = state.barriers
+        .filter((barrier) => barrierTouchesRect(barrier, rect))
+        .map((barrier) => barrier.id);
+
+      state.selectedIds = state.marquee.additive
+        ? [...new Set([...state.marquee.originalIds, ...touchedIds])]
+        : touchedIds;
+
+      state.selectedId = state.selectedIds.at(-1) ?? null;
+      renderSelection();
+      return;
+    }
+
+    if (state.drag) {
+      const world = screenToWorld(event.clientX, event.clientY);
+      const deltaX = world.x - state.drag.startWorldX;
+      const deltaY = world.y - state.drag.startWorldY;
+      const isGroupDrag = state.drag.positions.length > 1;
+
+      if (isGroupDrag) {
+        state.magnetPreview = null;
+        state.drag.positions.forEach((startPosition) => {
+          const barrier = state.barriers.find((item) => item.id === startPosition.id);
+          if (!barrier) return;
+          barrier.x = startPosition.x + deltaX;
+          barrier.y = startPosition.y + deltaY;
+        });
+      } else {
+        const startPosition = state.drag.positions[0];
+        const barrier = state.barriers.find((item) => item.id === startPosition?.id);
+        if (!barrier) return;
+
+        const proposedX = startPosition.x + deltaX;
+        const proposedY = startPosition.y + deltaY;
+        const adjusted = applyEndMagnetism(barrier, proposedX, proposedY);
+        barrier.x = adjusted.x;
+        barrier.y = adjusted.y;
+
+        if (state.magnetPreview && state.magnetPreview.type === "good") {
+          const endpoints = endpointPositions(barrier);
+          state.magnetPreview.from =
+            state.magnetPreview.movingSide === "start"
+              ? endpoints[0]
+              : endpoints[1];
+        }
       }
 
+      markTrackChanged();
       render();
       return;
     }
 
     if (state.rotate) {
+      if (state.rotate.type === "group") {
+        const pointerAngle = Math.atan2(
+          event.clientY - state.rotate.centerScreenY,
+          event.clientX - state.rotate.centerScreenX
+        );
+
+        let deltaAngle = pointerAngle - state.rotate.startPointerAngle;
+
+        if (event.shiftKey) {
+          const degrees = deltaAngle * 180 / Math.PI;
+          deltaAngle = Math.round(degrees / 15) * 15 * Math.PI / 180;
+        }
+
+        const cos = Math.cos(deltaAngle);
+        const sin = Math.sin(deltaAngle);
+        const deltaDegrees = deltaAngle * 180 / Math.PI;
+
+        state.rotate.barriers.forEach((startBarrier) => {
+          const barrier = state.barriers.find(
+            (item) => item.id === startBarrier.id
+          );
+          if (!barrier) return;
+
+          const relativeX = startBarrier.x - state.rotate.centerX;
+          const relativeY = startBarrier.y - state.rotate.centerY;
+
+          barrier.x =
+            state.rotate.centerX +
+            relativeX * cos -
+            relativeY * sin;
+          barrier.y =
+            state.rotate.centerY +
+            relativeX * sin +
+            relativeY * cos;
+          barrier.rotation =
+            (startBarrier.rotation + deltaDegrees + 360) % 360;
+        });
+
+        state.magnetPreview = null;
+        markTrackChanged();
+        render();
+        return;
+      }
+
       const barrier = state.barriers.find((b) => b.id === state.rotate.id);
       if (!barrier) return;
 
@@ -1412,15 +2103,18 @@
 
       barrier.rotation = (angle + 360) % 360;
       state.magnetPreview = evaluatePlacementFeedback(barrier);
+      markTrackChanged();
       render();
     }
   });
 
   function endPointerInteraction() {
     state.drag = null;
+    state.marquee = null;
     state.pan = null;
     state.rotate = null;
     state.magnetPreview = null;
+    state.interactionHistoryCaptured = false;
     svg.classList.remove("panning");
     render();
   }
@@ -1449,32 +2143,103 @@
   }, { passive: false });
 
   window.addEventListener("keydown", (event) => {
-    const isTyping = event.target instanceof HTMLInputElement ||
+    const isTyping =
+      event.target instanceof HTMLInputElement ||
       event.target instanceof HTMLTextAreaElement;
+
+    const modifier = event.metaKey || event.ctrlKey;
+    const key = event.key.toLowerCase();
+
+    if (modifier && key === "z" && !event.shiftKey) {
+      event.preventDefault();
+      undo();
+      return;
+    }
+
+    if (
+      (modifier && key === "z" && event.shiftKey) ||
+      (event.ctrlKey && key === "y")
+    ) {
+      event.preventDefault();
+      redo();
+      return;
+    }
+
+    if (modifier && key === "c" && !isTyping) {
+      event.preventDefault();
+      copySelected();
+      return;
+    }
+
+    if (modifier && key === "v" && !isTyping) {
+      event.preventDefault();
+      pasteClipboard();
+      return;
+    }
+
+    if (modifier && key === "a" && !isTyping) {
+      event.preventDefault();
+      selectAllBarriers();
+      return;
+    }
+
+    if (modifier && key === "d" && !isTyping) {
+      event.preventDefault();
+      duplicateSelected();
+      return;
+    }
 
     if (isTyping) return;
 
     if (event.code === "Space") {
       state.spaceDown = true;
       event.preventDefault();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      clearSelection();
+      return;
     }
 
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
       deleteSelected();
+      return;
     }
 
-    if (event.key.toLowerCase() === "q") {
-      rotateSelected(event.shiftKey ? -15 : -5);
-    }
-
-    if (event.key.toLowerCase() === "e") {
-      rotateSelected(event.shiftKey ? 15 : 5);
-    }
-
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
+    if (event.key === "ArrowLeft") {
       event.preventDefault();
-      duplicateSelected();
+      moveSelectedBy(event.shiftKey ? -10 : -1, 0);
+      return;
+    }
+
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveSelectedBy(event.shiftKey ? 10 : 1, 0);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveSelectedBy(0, event.shiftKey ? -10 : -1);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveSelectedBy(0, event.shiftKey ? 10 : 1);
+      return;
+    }
+
+    if (key === "q") {
+      rotateSelected(event.shiftKey ? -15 : -5);
+      return;
+    }
+
+    if (key === "e") {
+      rotateSelected(event.shiftKey ? 15 : 5);
     }
   });
 

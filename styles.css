@@ -73,11 +73,57 @@ button:disabled {
 
 .status {
   display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.status-details {
+  display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
-  font-size: 12px;
-  white-space: nowrap;
+}
+
+.barrier-counter {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.counter-item {
+  display: grid;
+  grid-template-columns: 14px auto minmax(20px, auto);
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 9px;
+}
+
+.counter-item + .counter-item {
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.counter-item strong {
+  font-size: 15px;
+  color: #ffffff;
+  text-align: right;
+}
+
+.counter-swatch {
+  display: block;
+  width: 14px;
+  height: 3px;
+  background: #f5f0e6;
+}
+
+.counter-swatch-start {
+  background: #37b56a;
 }
 
 .workspace {
@@ -140,6 +186,15 @@ button:disabled {
   pointer-events: none;
 }
 
+.marquee-selection {
+  fill: rgba(43, 124, 255, 0.14);
+  stroke: #2b7cff;
+  stroke-width: 1.5;
+  stroke-dasharray: 7 5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .rotation-line {
   stroke: #ffd447;
   stroke-width: 2;
@@ -179,7 +234,7 @@ button:disabled {
     gap: 8px;
   }
 
-  .status {
+  .status-details {
     display: none;
   }
 
@@ -300,4 +355,15 @@ button.active {
   height: 28px;
   background: rgba(255, 255, 255, 0.14);
   margin: 0 2px;
+}
+
+@media (max-width: 620px) {
+  .barrier-counter {
+    width: 100%;
+  }
+
+  .counter-item {
+    flex: 1;
+    grid-template-columns: 14px 1fr auto;
+  }
 }
