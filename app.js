@@ -8,6 +8,7 @@
   const FOOT_LENGTH = 1.9 * CM;
   const LONG_FOOT_OFFSET = 2 * CM;
   const BARRIER_THICKNESS = 2; // Matches the visible barrier stroke width.
+  const FUEL_TOKEN_SIZE = 24;
   const COLLISION_EPSILON = 0.08;
 
   const svg = document.getElementById("canvas");
@@ -25,6 +26,7 @@
   const addLongButton = document.getElementById("addLong");
   const addShortButton = document.getElementById("addShort");
   const addRedButton = document.getElementById("addRed");
+  const addFuelButton = document.getElementById("addFuel");
   const duplicateButton = document.getElementById("duplicate");
   const deleteButton = document.getElementById("delete");
   const toggleMagnetsButton = document.getElementById("toggleMagnets");
@@ -36,6 +38,7 @@
   const longBarrierCount = document.getElementById("longBarrierCount");
   const shortBarrierCount = document.getElementById("shortBarrierCount");
   const startBarrierCount = document.getElementById("startBarrierCount");
+  const fuelTokenCount = document.getElementById("fuelTokenCount");
 
   const TRACK_FORMAT = "mole-racing-track";
   const TRACK_VERSION = 1;
@@ -220,6 +223,7 @@
 
   function barrierName(barrier) {
     if (barrier.kind === "red") return "Start / Finish";
+    if (barrier.kind === "fuel") return "Fuel Token";
     return barrier.kind === "long" ? "Long Barrier" : "Short Barrier";
   }
 
@@ -274,7 +278,7 @@
       throw new Error("The track has no valid barrier list.");
     }
 
-    const validKinds = new Set(["long", "short", "red"]);
+    const validKinds = new Set(["long", "short", "red", "fuel"]);
     let startFinishCount = 0;
 
     data.barriers.forEach((barrier, index) => {
@@ -462,11 +466,13 @@
 
   function exportBarrierType(barrier) {
     if (barrier.kind === "red") return "start-finish";
+    if (barrier.kind === "fuel") return "fuel-token";
     return barrier.kind === "short" ? "short-barrier" : "long-barrier";
   }
 
   function exportBarrierLabel(barrier, number) {
     if (barrier.kind === "red") return `Start Finish ${number}`;
+    if (barrier.kind === "fuel") return `Fuel Token ${number}`;
     if (barrier.kind === "short") return `Short Barrier ${number}`;
     return `Long Barrier ${number}`;
   }
@@ -521,6 +527,20 @@
     offsetX = 0,
     offsetY = 0
   ) {
+    if (barrier.kind === "fuel") {
+      const paddedNumber = String(number).padStart(3, "0");
+      const groupId = `fuel-token-${paddedNumber}`;
+      const half = FUEL_TOKEN_SIZE / 2;
+      const x = barrier.x + offsetX;
+      const y = barrier.y + offsetY;
+      return [
+        `    <g id="${groupId}" data-barrier-id="${barrier.id}" transform="translate(${formatSvgNumber(x)} ${formatSvgNumber(y)})">`,
+        `      <rect x="${formatSvgNumber(-half)}" y="${formatSvgNumber(-half)}" width="${FUEL_TOKEN_SIZE}" height="${FUEL_TOKEN_SIZE}" rx="5" fill="#B7DF62" stroke="#6B8736" stroke-width="1.5"/>`,
+        `      <path d="M -6 -6 L 6 6 M 6 -6 L -6 6" fill="none" stroke="#6B8736" stroke-width="1.5" stroke-linecap="round"/>`,
+        `    </g>`,
+      ].join("\n");
+    }
+
     const length = barrierLength(barrier);
     const halfLength = length / 2;
     const bodyX = -halfLength;
@@ -571,24 +591,13 @@
 
   function calculateTrackBounds() {
     if (!state.barriers.length) return null;
-
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-
-    state.barriers.forEach((barrier) => {
-      barrierRectangles(barrier).forEach((rectangle) => {
-        rectangle.corners.forEach((point) => {
-          minX = Math.min(minX, point.x);
-          minY = Math.min(minY, point.y);
-          maxX = Math.max(maxX, point.x);
-          maxY = Math.max(maxY, point.y);
-        });
-      });
-    });
-
-    return { minX, minY, maxX, maxY };
+    const points = state.barriers.flatMap((barrier) => barrierPolygons(barrier).flat());
+    return {
+      minX: Math.min(...points.map((point) => point.x)),
+      minY: Math.min(...points.map((point) => point.y)),
+      maxX: Math.max(...points.map((point) => point.x)),
+      maxY: Math.max(...points.map((point) => point.y)),
+    };
   }
 
   function createExportSvg() {
@@ -612,6 +621,7 @@
       long: 0,
       short: 0,
       red: 0,
+      fuel: 0,
     };
 
     const barrierGroups = state.barriers.map((barrier) => {
@@ -846,6 +856,16 @@
   }
 
   function barrierPolygons(barrier) {
+    if (barrier.kind === "fuel") {
+      return [localRectanglePolygon(
+        barrier,
+        -FUEL_TOKEN_SIZE / 2,
+        -FUEL_TOKEN_SIZE / 2,
+        FUEL_TOKEN_SIZE,
+        FUEL_TOKEN_SIZE
+      )];
+    }
+
     const length = barrierLength(barrier);
     const halfLength = length / 2;
 
@@ -1192,11 +1212,12 @@
     y = barrier.y,
     rotation = barrier.rotation
   ) {
+    if (barrier.kind === "fuel") return null;
     const movingRectangles = barrierRectangles(barrier, x, y, rotation);
     let strongestOverlap = null;
 
     state.barriers.forEach((other) => {
-      if (other.id === barrier.id) return;
+      if (other.id === barrier.id || other.kind === "fuel") return;
 
       const otherRectangles = barrierRectangles(other);
 
@@ -1262,7 +1283,7 @@
     y = movingBarrier.y,
     rotation = movingBarrier.rotation
   ) {
-    if (!state.magnetsEnabled) return null;
+    if (!state.magnetsEnabled || movingBarrier.kind === "fuel") return null;
 
     const overlap = overlapInfo(movingBarrier, x, y, rotation);
 
@@ -1284,7 +1305,7 @@
     let nearest = null;
 
     state.barriers.forEach((other) => {
-      if (other.id === movingBarrier.id) return;
+      if (other.id === movingBarrier.id || other.kind === "fuel") return;
 
       const otherEndpoints = endpointPositions(other);
 
@@ -1402,47 +1423,45 @@
       transform: `translate(${barrier.x} ${barrier.y}) rotate(${barrier.rotation})`,
     });
 
-    const length = barrierLength(barrier);
-    const x1 = -length / 2;
-    const x2 = length / 2;
-    const isRed = barrier.kind === "red";
-    const colorClass = isRed ? " red" : "";
+    if (barrier.kind === "fuel") {
+      const half = FUEL_TOKEN_SIZE / 2;
+      group.appendChild(createSvgElement("rect", {
+        x: -half, y: -half, width: FUEL_TOKEN_SIZE, height: FUEL_TOKEN_SIZE,
+        rx: 5, class: "fuel-token-body", "pointer-events": "none",
+      }));
+      group.appendChild(createSvgElement("path", {
+        d: "M -6 -6 L 6 6 M 6 -6 L -6 6", class: "fuel-token-detail",
+      }));
+      group.appendChild(createSvgElement("rect", {
+        x: -half, y: -half, width: FUEL_TOKEN_SIZE, height: FUEL_TOKEN_SIZE,
+        rx: 5, class: "fuel-token-hitbox",
+      }));
+    } else if (barrier.kind !== "fuel") {
+      const length = barrierLength(barrier);
+      const x1 = -length / 2;
+      const x2 = length / 2;
+      const colorClass = barrier.kind === "red" ? " red" : "";
 
-    const line = createSvgElement("line", {
-      x1,
-      y1: 0,
-      x2,
-      y2: 0,
-      class: `barrier-line${colorClass}`,
-      "pointer-events": "none",
-    });
-    group.appendChild(line);
+      group.appendChild(createSvgElement("line", {
+        x1, y1: 0, x2, y2: 0, class: `barrier-line${colorClass}`,
+        "pointer-events": "none",
+      }));
+      group.appendChild(createSvgElement("line", {
+        x1, y1: 0, x2, y2: 0, class: "barrier-hitbox",
+      }));
 
-    const hitbox = createSvgElement("line", {
-      x1,
-      y1: 0,
-      x2,
-      y2: 0,
-      class: "barrier-hitbox",
-    });
-    group.appendChild(hitbox);
-
-    const footCenters =
-      barrier.kind === "short"
+      const footCenters = barrier.kind === "short"
         ? [0]
         : [x1 + LONG_FOOT_OFFSET, x2 - LONG_FOOT_OFFSET];
 
-    footCenters.forEach((footX) => {
-      const foot = createSvgElement("line", {
-        x1: footX,
-        y1: -FOOT_LENGTH / 2,
-        x2: footX,
-        y2: FOOT_LENGTH / 2,
-        class: `barrier-foot${colorClass}`,
-        "pointer-events": "none",
+      footCenters.forEach((footX) => {
+        group.appendChild(createSvgElement("line", {
+          x1: footX, y1: -FOOT_LENGTH / 2,
+          x2: footX, y2: FOOT_LENGTH / 2,
+          class: `barrier-foot${colorClass}`, "pointer-events": "none",
+        }));
       });
-      group.appendChild(foot);
-    });
+    }
 
     group.addEventListener("pointerdown", (event) => {
       if (state.spaceDown || event.button === 1) return;
@@ -1550,7 +1569,9 @@
 
     duplicateButton.disabled = !barrier;
     deleteButton.disabled = selectedBarriers.length === 0;
-    angleInput.disabled = !barrier;
+    angleInput.disabled =
+      !barrier ||
+      (selectedBarriers.length === 1 && barrier.kind === "fuel");
 
     const redCount = state.barriers.filter((b) => b.kind === "red").length;
     addRedButton.disabled = redCount >= 2;
@@ -1563,21 +1584,28 @@
 
     selectionInfo.textContent =
       selectedBarriers.length === 1
-        ? `${barrierName(barrier)} · ${Math.round(barrier.rotation)}°`
-        : `${selectedBarriers.length} barriers selected · ${Math.round(barrier.rotation * 10) / 10}°`;
+        ? barrier.kind === "fuel"
+          ? barrierName(barrier)
+          : `${barrierName(barrier)} · ${Math.round(barrier.rotation)}°`
+        : `${selectedBarriers.length} objects selected · ${Math.round(barrier.rotation * 10) / 10}°`;
 
     if (document.activeElement !== angleInput) {
       angleInput.value = String(Math.round(barrier.rotation * 10) / 10);
     }
 
     selectedBarriers.forEach((selectedBarrier) => {
-      const length = barrierLength(selectedBarrier);
       const padding = 15;
+      const width = selectedBarrier.kind === "fuel"
+        ? FUEL_TOKEN_SIZE
+        : barrierLength(selectedBarrier);
+      const height = selectedBarrier.kind === "fuel"
+        ? FUEL_TOKEN_SIZE
+        : FOOT_LENGTH;
       const box = createSvgElement("rect", {
-        x: -length / 2 - padding,
-        y: -FOOT_LENGTH / 2 - padding,
-        width: length + padding * 2,
-        height: FOOT_LENGTH + padding * 2,
+        x: -width / 2 - padding,
+        y: -height / 2 - padding,
+        width: width + padding * 2,
+        height: height + padding * 2,
         rx: 5,
         class: "selection-box",
       });
@@ -1719,14 +1747,16 @@
         if (barrier.kind === "long") result.long += 1;
         if (barrier.kind === "short") result.short += 1;
         if (barrier.kind === "red") result.start += 1;
+        if (barrier.kind === "fuel") result.fuel += 1;
         return result;
       },
-      { long: 0, short: 0, start: 0 }
+      { long: 0, short: 0, start: 0, fuel: 0 }
     );
 
     longBarrierCount.textContent = String(counts.long);
     shortBarrierCount.textContent = String(counts.short);
     startBarrierCount.textContent = String(counts.start);
+    fuelTokenCount.textContent = String(counts.fuel);
   }
 
   function render() {
@@ -1785,6 +1815,7 @@
     const selectedBarriers = getSelectedBarriers();
     const activeBarrier = getSelected();
     if (!activeBarrier || selectedBarriers.length === 0) return;
+    if (selectedBarriers.length === 1 && activeBarrier.kind === "fuel") return;
 
     pushUndoState();
 
@@ -1824,6 +1855,7 @@
     const activeBarrier = getSelected();
     const selectedBarriers = getSelectedBarriers();
     if (!activeBarrier || selectedBarriers.length === 0) return;
+    if (selectedBarriers.length === 1 && activeBarrier.kind === "fuel") return;
 
     const normalizedInput = angleInput.value.trim().replace(",", ".");
     if (normalizedInput === "") return;
@@ -1902,6 +1934,7 @@
   addLongButton.addEventListener("click", () => addBarrier("long"));
   addShortButton.addEventListener("click", () => addBarrier("short"));
   addRedButton.addEventListener("click", () => addBarrier("red"));
+  addFuelButton.addEventListener("click", () => addBarrier("fuel"));
   deleteButton.addEventListener("click", deleteSelected);
   duplicateButton.addEventListener("click", duplicateSelected);
   angleInput.addEventListener("change", applyAngleInput);

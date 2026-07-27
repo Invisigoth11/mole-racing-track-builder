@@ -1,4 +1,4 @@
-# Mole Racing Track Builder – Prototype 32
+# Mole Racing Track Builder – Prototype 34
 
 Open `index.html` directly in your browser.
 
@@ -103,3 +103,19 @@ The toolbar now displays a live count of:
 
 The counter updates immediately when barriers are added, deleted, pasted,
 duplicated, loaded, undone, or redone.
+
+## Fuel Tokens
+
+- Added **+ Fuel Token**.
+- Fuel Tokens support selection, dragging, marquee selection, copy/paste,
+  duplicate, delete, undo/redo, save/load and SVG export.
+- Added a live Fuel counter.
+- Placement Assist ignores Fuel Tokens.
+- A single Fuel Token has no rotation handle.
+
+## Fuel Token refinement
+
+- Reduced the visual and physical size of Fuel Tokens in the editor.
+- Removed the inner frame and extra decorative detail.
+- Fuel Tokens now display only a centered cross.
+- The same simplified shape is used in SVG export.
