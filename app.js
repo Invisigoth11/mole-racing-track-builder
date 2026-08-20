@@ -7,8 +7,8 @@
   const SHORT_LENGTH = 7.5 * CM;
   const FOOT_LENGTH = 1.9 * CM;
   const LONG_FOOT_OFFSET = 2 * CM;
-  const BARRIER_THICKNESS = 2; // Matches the visible barrier stroke width.
-  const FUEL_TOKEN_SIZE = 24;
+  const BARRIER_THICKNESS = 3; // Matches the visible barrier stroke width.
+  const FUEL_TOKEN_SIZE = 20;
   const COLLISION_EPSILON = 0.08;
 
   const svg = document.getElementById("canvas");
@@ -536,7 +536,7 @@
       return [
         `    <g id="${groupId}" data-barrier-id="${barrier.id}" transform="translate(${formatSvgNumber(x)} ${formatSvgNumber(y)})">`,
         `      <rect x="${formatSvgNumber(-half)}" y="${formatSvgNumber(-half)}" width="${FUEL_TOKEN_SIZE}" height="${FUEL_TOKEN_SIZE}" rx="5" fill="#B7DF62" stroke="#6B8736" stroke-width="1.5"/>`,
-        `      <path d="M -6 -6 L 6 6 M 6 -6 L -6 6" fill="none" stroke="#6B8736" stroke-width="1.5" stroke-linecap="round"/>`,
+        `      <path d="M -5 -5 L 5 5 M 5 -5 L -5 5" fill="none" stroke="#6B8736" stroke-width="1.5" stroke-linecap="round"/>`,
         `    </g>`,
       ].join("\n");
     }
@@ -1430,7 +1430,7 @@
         rx: 5, class: "fuel-token-body", "pointer-events": "none",
       }));
       group.appendChild(createSvgElement("path", {
-        d: "M -6 -6 L 6 6 M 6 -6 L -6 6", class: "fuel-token-detail",
+        d: "M -5 -5 L 5 5 M 5 -5 L -5 5", class: "fuel-token-detail",
       }));
       group.appendChild(createSvgElement("rect", {
         x: -half, y: -half, width: FUEL_TOKEN_SIZE, height: FUEL_TOKEN_SIZE,

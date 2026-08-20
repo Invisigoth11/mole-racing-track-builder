@@ -1,4 +1,10 @@
-# Mole Racing Track Builder – Prototype 34
+# Mole Racing Track Builder – Prototype 35
+
+Prototype 35 is a visual-only refresh inspired by the Mole Racing rulebook. It
+adds a warm textured sand canvas, a subtle alignment grid, brown barriers, the
+matching green palette for Start / Finish barriers and Fuel Tokens, a warm dark
+toolbar, and a rulebook-style barrier counter. Editor behavior and export
+precision are unchanged.
 
 Open `index.html` directly in your browser.
 
