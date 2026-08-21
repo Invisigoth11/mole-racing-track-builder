@@ -295,6 +295,15 @@ button:disabled {
   line-height: 1.45;
 }
 
+.welcome-panel .welcome-device-note {
+  margin-top: -6px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: rgba(101, 70, 51, 0.1);
+  color: var(--earth);
+  font-size: 13px;
+}
+
 .welcome-actions {
   display: flex;
   justify-content: center;
