@@ -226,8 +226,8 @@ button:disabled {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: min(420px, calc(100% - 40px));
-  padding: 28px;
+  width: min(540px, calc(100% - 40px));
+  padding: 30px 34px 32px;
   border: 1px solid rgba(94, 65, 43, 0.28);
   border-radius: 14px;
   background: rgba(247, 221, 160, 0.96);
@@ -242,24 +242,23 @@ button:disabled {
   display: none;
 }
 
-.welcome-eyebrow {
-  color: var(--leaf-dark);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.welcome-logo {
+  display: block;
+  width: min(360px, 88%);
+  height: auto;
+  margin: 0 auto 14px;
 }
 
 .welcome-panel h1 {
-  margin: 6px 0 10px;
-  font-size: clamp(28px, 4vw, 40px);
+  margin: 0 0 12px;
+  font-size: clamp(26px, 3.4vw, 38px);
   line-height: 1;
   text-transform: uppercase;
 }
 
 .welcome-panel p {
   margin: 0 auto 20px;
-  max-width: 34ch;
+  max-width: 52ch;
   color: rgba(47, 38, 31, 0.78);
   line-height: 1.45;
 }
@@ -274,6 +273,7 @@ button:disabled {
 .welcome-actions button {
   background: var(--leaf-dark);
   border-color: rgba(47, 38, 31, 0.18);
+  text-transform: uppercase;
 }
 
 .welcome-actions .welcome-secondary {
