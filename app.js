@@ -913,7 +913,7 @@
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${formatPdfNumber(pageWidth)} ${formatPdfNumber(pageHeight)}] /Resources << /ExtGState << /GS1 5 0 R /GS2 6 0 R /GS3 7 0 R >> >> /Contents 4 0 R >>`,
       `<< /Length ${contentLength} >>\nstream\n${content}endstream`,
       "<< /Type /ExtGState /ca 0.1 /CA 0.1 >>",
-      "<< /Type /ExtGState /ca 0.022 /CA 0.022 >>",
+      "<< /Type /ExtGState /ca 0.045 /CA 0.045 >>",
       "<< /Type /ExtGState /ca 0.14 /CA 0.14 >>",
     ];
 
