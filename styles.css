@@ -209,6 +209,38 @@ button:disabled {
   min-height: 0;
 }
 
+.tool-palette {
+  position: absolute;
+  z-index: 5;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  width: 174px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 226, 167, 0.2);
+  border-radius: 10px;
+  background: rgba(48, 41, 36, 0.94);
+  box-shadow: 0 6px 18px rgba(55, 35, 22, 0.28);
+  backdrop-filter: blur(5px);
+}
+
+.tool-palette > strong {
+  padding: 1px 3px 5px;
+  color: var(--sand-light);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tool-palette button {
+  width: 100%;
+  min-height: 42px;
+  justify-content: flex-start;
+  text-align: left;
+}
+
 #canvas {
   display: block;
   width: 100%;
@@ -506,6 +538,24 @@ button.active {
 }
 
 @media (max-width: 620px) {
+  .tool-palette {
+    right: 10px;
+    left: 10px;
+    top: 10px;
+    width: auto;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .tool-palette > strong {
+    display: none;
+  }
+
+  .tool-palette button {
+    width: auto;
+    min-width: max-content;
+  }
+
   .barrier-counter {
     width: 100%;
   }
