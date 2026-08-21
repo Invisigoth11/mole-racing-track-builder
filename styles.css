@@ -222,6 +222,64 @@ button:disabled {
   cursor: grabbing;
 }
 
+.welcome-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(420px, calc(100% - 40px));
+  padding: 28px;
+  border: 1px solid rgba(94, 65, 43, 0.28);
+  border-radius: 14px;
+  background: rgba(247, 221, 160, 0.96);
+  color: var(--ink);
+  box-shadow: 8px 8px 0 rgba(101, 70, 51, 0.18);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(4px);
+}
+
+.welcome-panel[hidden] {
+  display: none;
+}
+
+.welcome-eyebrow {
+  color: var(--leaf-dark);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.welcome-panel h1 {
+  margin: 6px 0 10px;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.welcome-panel p {
+  margin: 0 auto 20px;
+  max-width: 34ch;
+  color: rgba(47, 38, 31, 0.78);
+  line-height: 1.45;
+}
+
+.welcome-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.welcome-actions button {
+  background: var(--leaf-dark);
+  border-color: rgba(47, 38, 31, 0.18);
+}
+
+.welcome-actions .welcome-secondary {
+  background: var(--earth-mid);
+}
+
 .canvas-bg {
   fill: var(--sand);
 }
