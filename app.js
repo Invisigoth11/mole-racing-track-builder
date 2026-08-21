@@ -20,7 +20,7 @@
   const barriersLayer = document.getElementById("barriers");
   const overlayLayer = document.getElementById("selectionOverlay");
   const welcomePanel = document.getElementById("welcomePanel");
-  const welcomeAddLongButton = document.getElementById("welcomeAddLong");
+  const welcomeStartBuildingButton = document.getElementById("welcomeStartBuilding");
   const welcomeLoadTrackButton = document.getElementById("welcomeLoadTrack");
 
   const trackNameInput = document.getElementById("trackName");
@@ -72,6 +72,7 @@
     undoStack: [],
     redoStack: [],
     interactionHistoryCaptured: false,
+    welcomeDismissed: false,
   };
 
   function createHistorySnapshot() {
@@ -342,6 +343,7 @@
       y: Number(barrier.y),
       rotation: ((Number(barrier.rotation) % 360) + 360) % 360,
     }));
+    state.welcomeDismissed = state.barriers.length > 0;
 
     const highestId = state.barriers.reduce(
       (highest, barrier) => Math.max(highest, barrier.id),
@@ -399,6 +401,7 @@
     const rect = svg.getBoundingClientRect();
     state.trackName = "Untitled Track";
     state.barriers = [];
+    state.welcomeDismissed = false;
     state.nextId = 1;
     state.selectedId = null;
     state.selectedIds = [];
@@ -2161,7 +2164,7 @@
 
   function render() {
     renderBarrierCounter();
-    welcomePanel.hidden = state.barriers.length > 0;
+    welcomePanel.hidden = state.barriers.length > 0 || state.welcomeDismissed;
     decorationsLayer.innerHTML = "";
     barrierGlowsLayer.innerHTML = "";
     barriersLayer.innerHTML = "";
@@ -2343,7 +2346,10 @@
   });
 
   addLongButton.addEventListener("click", () => addBarrier("long"));
-  welcomeAddLongButton.addEventListener("click", () => addBarrier("long"));
+  welcomeStartBuildingButton.addEventListener("click", () => {
+    state.welcomeDismissed = true;
+    render();
+  });
   welcomeLoadTrackButton.addEventListener("click", () => trackFileInput.click());
   addShortButton.addEventListener("click", () => addBarrier("short"));
   addRedButton.addEventListener("click", () => addBarrier("red"));
