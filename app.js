@@ -19,6 +19,9 @@
   const barrierGlowsLayer = document.getElementById("barrierGlows");
   const barriersLayer = document.getElementById("barriers");
   const overlayLayer = document.getElementById("selectionOverlay");
+  const welcomePanel = document.getElementById("welcomePanel");
+  const welcomeAddLongButton = document.getElementById("welcomeAddLong");
+  const welcomeLoadTrackButton = document.getElementById("welcomeLoadTrack");
 
   const trackNameInput = document.getElementById("trackName");
   const newTrackButton = document.getElementById("newTrack");
@@ -2158,6 +2161,7 @@
 
   function render() {
     renderBarrierCounter();
+    welcomePanel.hidden = state.barriers.length > 0;
     decorationsLayer.innerHTML = "";
     barrierGlowsLayer.innerHTML = "";
     barriersLayer.innerHTML = "";
@@ -2339,6 +2343,8 @@
   });
 
   addLongButton.addEventListener("click", () => addBarrier("long"));
+  welcomeAddLongButton.addEventListener("click", () => addBarrier("long"));
+  welcomeLoadTrackButton.addEventListener("click", () => trackFileInput.click());
   addShortButton.addEventListener("click", () => addBarrier("short"));
   addRedButton.addEventListener("click", () => addBarrier("red"));
   addFuelButton.addEventListener("click", () => addBarrier("fuel"));
@@ -2699,7 +2705,7 @@
     }
   });
 
-  // Restore the latest browser autosave. If none exists, open the sample track.
+  // Restore the latest browser autosave. New visitors start with an empty track.
   requestAnimationFrame(() => {
     const rect = svg.getBoundingClientRect();
     state.view = { x: rect.width / 2, y: rect.height / 2, scale: 1 };
@@ -2717,10 +2723,6 @@
 
     state.trackName = "Untitled Track";
     trackNameInput.value = state.trackName;
-    state.barriers.push(
-      { id: state.nextId++, kind: "long", x: -110, y: 0, rotation: 0 },
-      { id: state.nextId++, kind: "short", x: 60, y: 0, rotation: 25 }
-    );
     state.isDirty = false;
     applyView();
     render();
