@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mole Racing Track Builder</title>
-  <link rel="stylesheet" href="styles.css?v=35" />
+  <link rel="stylesheet" href="styles.css?v=35.3" />
 </head>
 <body>
   <header class="toolbar">
@@ -22,12 +22,14 @@
       <button id="saveTrack">Save Track…</button>
       <button id="loadTrack">Load Track…</button>
       <button id="exportSvg">Export SVG…</button>
+      <button id="exportPdf">Export PDF…</button>
       <input id="trackFileInput" type="file" accept=".moleracing,application/json" hidden />
       <span class="tool-divider" aria-hidden="true"></span>
-      <button id="addLong">+ Long Barrier</button>
-      <button id="addShort">+ Short Barrier</button>
-      <button id="addRed">+ Start / Finish</button>
-      <button id="addFuel">+ Fuel Token</button>
+      <button id="addLong">Long Barrier</button>
+      <button id="addShort">Short Barrier</button>
+      <button id="addRed">Start / Finish</button>
+      <button id="addFuel">Fuel Token</button>
+      <button id="addArrow">Direction Arrow</button>
       <button id="duplicate">Duplicate</button>
       <button id="delete">Delete</button>
       <button id="toggleMagnets" class="active">Placement Assist: On</button>
@@ -89,6 +91,8 @@
       <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#grid)" pointer-events="none" />
 
       <g id="viewport">
+        <g id="barrierGlows"></g>
+        <g id="trackDecorations"></g>
         <g id="barriers"></g>
         <g id="selectionOverlay"></g>
       </g>
@@ -105,11 +109,13 @@
       <span>Save Track downloads a .moleracing file</span>
       <span>Load Track opens a saved track file</span>
       <span>Export SVG creates a clean, full-scale vector file</span>
+      <span>Export PDF creates a clean, full-scale PDF</span>
+      <span>Direction Arrows can be moved, rotated and duplicated</span>
       <span>Delete / Backspace: remove</span>
       <span>Placement guidance appears while moving or rotating</span>
     </div>
   </main>
 
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=35.3"></script>
 </body>
 </html>

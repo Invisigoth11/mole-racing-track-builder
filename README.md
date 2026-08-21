@@ -31,6 +31,14 @@ Open `index.html` directly in your browser.
 
 Note: Adobe InDesign places an SVG as one linked graphic. The internal barrier groups remain available when the SVG is edited in Illustrator, but individual barriers cannot be selected directly on the InDesign page.
 
+## PDF export
+
+- **Export PDF…** downloads the complete track as a one-page vector PDF.
+- The PDF uses the same full-scale dimensions, crop and 10 mm margin as SVG export.
+- The warm textured sand background, barrier glow and Mole Racing palette are included.
+- Selection, handles and placement guides are excluded.
+- Standard barriers export in brown; Start / Finish barriers and Fuel Tokens export in green.
+
 ## Illustrator compatibility
 
 - Barrier rotation and position are baked directly into the exported coordinates.
@@ -125,3 +133,10 @@ duplicated, loaded, undone, or redone.
 - Removed the inner frame and extra decorative detail.
 - Fuel Tokens now display only a centered cross.
 - The same simplified shape is used in SVG export.
+
+## Direction arrows
+
+- **Direction Arrow** adds a subtle rulebook-style arrow to the track.
+- Any number of arrows can be added, moved, rotated, copied and deleted.
+- Arrows are saved in `.moleracing` track files and included beneath the track pieces in SVG and PDF exports.
+- Direction arrows do not count as barriers and are ignored by Placement Assist.

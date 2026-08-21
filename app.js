@@ -9,10 +9,14 @@
   const LONG_FOOT_OFFSET = 2 * CM;
   const BARRIER_THICKNESS = 3; // Matches the visible barrier stroke width.
   const FUEL_TOKEN_SIZE = 20;
+  const ARROW_LENGTH = 70;
+  const ARROW_WIDTH = 32;
   const COLLISION_EPSILON = 0.08;
 
   const svg = document.getElementById("canvas");
   const viewport = document.getElementById("viewport");
+  const decorationsLayer = document.getElementById("trackDecorations");
+  const barrierGlowsLayer = document.getElementById("barrierGlows");
   const barriersLayer = document.getElementById("barriers");
   const overlayLayer = document.getElementById("selectionOverlay");
 
@@ -21,12 +25,14 @@
   const saveTrackButton = document.getElementById("saveTrack");
   const loadTrackButton = document.getElementById("loadTrack");
   const exportSvgButton = document.getElementById("exportSvg");
+  const exportPdfButton = document.getElementById("exportPdf");
   const trackFileInput = document.getElementById("trackFileInput");
 
   const addLongButton = document.getElementById("addLong");
   const addShortButton = document.getElementById("addShort");
   const addRedButton = document.getElementById("addRed");
   const addFuelButton = document.getElementById("addFuel");
+  const addArrowButton = document.getElementById("addArrow");
   const duplicateButton = document.getElementById("duplicate");
   const deleteButton = document.getElementById("delete");
   const toggleMagnetsButton = document.getElementById("toggleMagnets");
@@ -224,6 +230,7 @@
   function barrierName(barrier) {
     if (barrier.kind === "red") return "Start / Finish";
     if (barrier.kind === "fuel") return "Fuel Token";
+    if (barrier.kind === "arrow") return "Direction Arrow";
     return barrier.kind === "long" ? "Long Barrier" : "Short Barrier";
   }
 
@@ -278,7 +285,7 @@
       throw new Error("The track has no valid barrier list.");
     }
 
-    const validKinds = new Set(["long", "short", "red", "fuel"]);
+    const validKinds = new Set(["long", "short", "red", "fuel", "arrow"]);
     let startFinishCount = 0;
 
     data.barriers.forEach((barrier, index) => {
@@ -467,12 +474,14 @@
   function exportBarrierType(barrier) {
     if (barrier.kind === "red") return "start-finish";
     if (barrier.kind === "fuel") return "fuel-token";
+    if (barrier.kind === "arrow") return "direction-arrow";
     return barrier.kind === "short" ? "short-barrier" : "long-barrier";
   }
 
   function exportBarrierLabel(barrier, number) {
     if (barrier.kind === "red") return `Start Finish ${number}`;
     if (barrier.kind === "fuel") return `Fuel Token ${number}`;
+    if (barrier.kind === "arrow") return `Direction Arrow ${number}`;
     if (barrier.kind === "short") return `Short Barrier ${number}`;
     return `Long Barrier ${number}`;
   }
@@ -527,6 +536,21 @@
     offsetX = 0,
     offsetY = 0
   ) {
+    if (barrier.kind === "arrow") {
+      const paddedNumber = String(number).padStart(3, "0");
+      const groupId = `direction-arrow-${paddedNumber}`;
+      const points = arrowLocalPoints().map((point) =>
+        transformExportPoint(barrier, point.x, point.y, offsetX, offsetY)
+      );
+      const path = points.map((point, index) =>
+        `${index === 0 ? "M" : "L"} ${formatSvgNumber(point.x)} ${formatSvgNumber(point.y)}`
+      ).join(" ");
+      return [
+        `    <g id="${groupId}" data-barrier-id="${barrier.id}">`,
+        `      <path d="${path} Z" fill="#6F4823" opacity="0.2"/>`,
+        `    </g>`,
+      ].join("\n");
+    }
     if (barrier.kind === "fuel") {
       const paddedNumber = String(number).padStart(3, "0");
       const groupId = `fuel-token-${paddedNumber}`;
@@ -622,9 +646,14 @@
       short: 0,
       red: 0,
       fuel: 0,
+      arrow: 0,
     };
 
-    const barrierGroups = state.barriers.map((barrier) => {
+    const exportObjects = [
+      ...state.barriers.filter((barrier) => barrier.kind === "arrow"),
+      ...state.barriers.filter((barrier) => barrier.kind !== "arrow"),
+    ];
+    const barrierGroups = exportObjects.map((barrier) => {
       counters[barrier.kind] += 1;
       return createExportBarrierGroup(
         barrier,
@@ -672,6 +701,296 @@
       URL.revokeObjectURL(url);
     } catch (error) {
       window.alert(`Could not export SVG.\n\n${error.message}`);
+    }
+  }
+
+  function formatPdfNumber(value) {
+    const rounded = Math.round(Number(value) * 1000) / 1000;
+    return Object.is(rounded, -0) ? "0" : String(rounded);
+  }
+
+  function createPdfBytes() {
+    const bounds = calculateTrackBounds();
+    if (!bounds) {
+      throw new Error("The track is empty.");
+    }
+
+    // Editor coordinates are millimetres. PDF coordinates are points.
+    const margin = CM;
+    const sourceMinX = bounds.minX - margin;
+    const sourceMinY = bounds.minY - margin;
+    const widthMm = bounds.maxX - bounds.minX + margin * 2;
+    const heightMm = bounds.maxY - bounds.minY + margin * 2;
+    const pointsPerMm = 72 / 25.4;
+    const pageWidth = widthMm * pointsPerMm;
+    const pageHeight = heightMm * pointsPerMm;
+
+    if (pageWidth > 14400 || pageHeight > 14400) {
+      throw new Error("The full-scale track is too large for a standard PDF page.");
+    }
+
+    const pdfPoint = (point) => ({
+      x: (point.x - sourceMinX) * pointsPerMm,
+      y: pageHeight - (point.y - sourceMinY) * pointsPerMm,
+    });
+    const pdfBarrierSegments = (barrier) => {
+      const segments = [];
+      const length = barrierLength(barrier);
+      const halfLength = length / 2;
+      const bodyStart = pdfPoint(transformExportPoint(barrier, -halfLength, 0));
+      const bodyEnd = pdfPoint(transformExportPoint(barrier, halfLength, 0));
+      segments.push(
+        `${formatPdfNumber(bodyStart.x)} ${formatPdfNumber(bodyStart.y)} m ` +
+        `${formatPdfNumber(bodyEnd.x)} ${formatPdfNumber(bodyEnd.y)} l S`
+      );
+      const footCenters = barrier.kind === "short"
+        ? [0]
+        : [-halfLength + LONG_FOOT_OFFSET, halfLength - LONG_FOOT_OFFSET];
+      footCenters.forEach((footX) => {
+        const footStart = pdfPoint(
+          transformExportPoint(barrier, footX, -FOOT_LENGTH / 2)
+        );
+        const footEnd = pdfPoint(
+          transformExportPoint(barrier, footX, FOOT_LENGTH / 2)
+        );
+        segments.push(
+          `${formatPdfNumber(footStart.x)} ${formatPdfNumber(footStart.y)} m ` +
+          `${formatPdfNumber(footEnd.x)} ${formatPdfNumber(footEnd.y)} l S`
+        );
+      });
+      return segments;
+    };
+    const pdfFuelTokenPath = (barrier) => {
+      const half = FUEL_TOKEN_SIZE / 2;
+      const radius = 5;
+      const curve = radius * 0.5522847498;
+      const point = (x, y) => pdfPoint(transformExportPoint(barrier, x, y));
+      const path = [];
+      const move = point(-half + radius, -half);
+      const topEnd = point(half - radius, -half);
+      path.push(
+        `${formatPdfNumber(move.x)} ${formatPdfNumber(move.y)} m`,
+        `${formatPdfNumber(topEnd.x)} ${formatPdfNumber(topEnd.y)} l`
+      );
+      const sections = [
+        {
+          controls: [[half - radius + curve, -half], [half, -half + radius - curve], [half, -half + radius]],
+          lineEnd: [half, half - radius],
+        },
+        {
+          controls: [[half, half - radius + curve], [half - radius + curve, half], [half - radius, half]],
+          lineEnd: [-half + radius, half],
+        },
+        {
+          controls: [[-half + radius - curve, half], [-half, half - radius + curve], [-half, half - radius]],
+          lineEnd: [-half, -half + radius],
+        },
+        {
+          controls: [[-half, -half + radius - curve], [-half + radius - curve, -half], [-half + radius, -half]],
+          lineEnd: null,
+        },
+      ];
+      sections.forEach(({ controls: [control1, control2, end], lineEnd }) => {
+        const c1 = point(...control1);
+        const c2 = point(...control2);
+        const target = point(...end);
+        path.push(
+          `${formatPdfNumber(c1.x)} ${formatPdfNumber(c1.y)} ` +
+          `${formatPdfNumber(c2.x)} ${formatPdfNumber(c2.y)} ` +
+          `${formatPdfNumber(target.x)} ${formatPdfNumber(target.y)} c`
+        );
+        if (lineEnd) {
+          const lineTarget = point(...lineEnd);
+          path.push(
+            `${formatPdfNumber(lineTarget.x)} ${formatPdfNumber(lineTarget.y)} l`
+          );
+        }
+      });
+      path.push("h f");
+      return path;
+    };
+    const commands = [
+      "q",
+      "0.937 0.714 0.302 rg",
+      `0 0 ${formatPdfNumber(pageWidth)} ${formatPdfNumber(pageHeight)} re f`,
+    ];
+
+    // Deterministic, low-opacity sand speckles inspired by the rulebook.
+    let textureSeed = (
+      Math.round(widthMm * 10) * 73856093 ^
+      Math.round(heightMm * 10) * 19349663
+    ) >>> 0;
+    const textureRandom = () => {
+      textureSeed = (textureSeed * 1664525 + 1013904223) >>> 0;
+      return textureSeed / 4294967296;
+    };
+    const pdfCircle = (x, y, radius) => {
+      const k = radius * 0.5522847498;
+      return [
+        `${formatPdfNumber(x + radius)} ${formatPdfNumber(y)} m`,
+        `${formatPdfNumber(x + radius)} ${formatPdfNumber(y + k)} ` +
+          `${formatPdfNumber(x + k)} ${formatPdfNumber(y + radius)} ` +
+          `${formatPdfNumber(x)} ${formatPdfNumber(y + radius)} c`,
+        `${formatPdfNumber(x - k)} ${formatPdfNumber(y + radius)} ` +
+          `${formatPdfNumber(x - radius)} ${formatPdfNumber(y + k)} ` +
+          `${formatPdfNumber(x - radius)} ${formatPdfNumber(y)} c`,
+        `${formatPdfNumber(x - radius)} ${formatPdfNumber(y - k)} ` +
+          `${formatPdfNumber(x - k)} ${formatPdfNumber(y - radius)} ` +
+          `${formatPdfNumber(x)} ${formatPdfNumber(y - radius)} c`,
+        `${formatPdfNumber(x + k)} ${formatPdfNumber(y - radius)} ` +
+          `${formatPdfNumber(x + radius)} ${formatPdfNumber(y - k)} ` +
+          `${formatPdfNumber(x + radius)} ${formatPdfNumber(y)} c f`,
+      ];
+    };
+    const speckleCount = Math.min(
+      180,
+      Math.max(45, Math.round((widthMm * heightMm) / 700))
+    );
+    commands.push("q", "/GS1 gs", "0.624 0.416 0.204 rg");
+    for (let index = 0; index < speckleCount; index += 1) {
+      const radiusMm = index % 7 === 0
+        ? 3 + textureRandom() * 7
+        : 0.35 + textureRandom() * 1.5;
+      commands.push(
+        ...pdfCircle(
+          textureRandom() * pageWidth,
+          textureRandom() * pageHeight,
+          radiusMm * pointsPerMm
+        )
+      );
+    }
+    commands.push("Q");
+
+    // Keep every highlight below every barrier, matching the editor layer order.
+    const glowSegments = [];
+    state.barriers.forEach((barrier) => {
+      if (barrier.kind === "fuel" || barrier.kind === "arrow") return;
+      glowSegments.push(...pdfBarrierSegments(barrier));
+    });
+    commands.push("q", "/GS2 gs", "1 0.88 0.58 RG", "1 J");
+    const glowLayers = 18;
+    for (let layer = 0; layer < glowLayers; layer += 1) {
+      const widthMm = 15 - (layer / (glowLayers - 1)) * 10;
+      commands.push(
+        `${formatPdfNumber(widthMm * pointsPerMm)} w`,
+        ...glowSegments
+      );
+    }
+    commands.push("Q");
+
+    // Mask texture and highlights below arrows, then add their translucent fill.
+    const pdfArrows = state.barriers.filter((barrier) => barrier.kind === "arrow");
+    const drawPdfArrows = () => {
+      pdfArrows.forEach((arrow) => {
+        const points = barrierPolygons(arrow)[0].map(pdfPoint);
+        commands.push(
+          `${formatPdfNumber(points[0].x)} ${formatPdfNumber(points[0].y)} m`
+        );
+        points.slice(1).forEach((point) => {
+          commands.push(`${formatPdfNumber(point.x)} ${formatPdfNumber(point.y)} l`);
+        });
+        commands.push("h f");
+      });
+    };
+    commands.push("0.937 0.714 0.302 rg");
+    drawPdfArrows();
+    commands.push("q", "/GS3 gs", "0.435 0.282 0.137 rg");
+    drawPdfArrows();
+    commands.push("Q");
+
+    state.barriers.forEach((barrier) => {
+      const isStart = barrier.kind === "red";
+      const isFuel = barrier.kind === "fuel";
+      if (barrier.kind === "arrow") return;
+      if (!isFuel) {
+        commands.push(
+          isStart ? "0.471 0.741 0.404 rg" : "0.396 0.275 0.2 rg"
+        );
+        barrierPolygons(barrier).forEach((polygon) => {
+          const points = polygon.map(pdfPoint);
+          commands.push(
+            `${formatPdfNumber(points[0].x)} ${formatPdfNumber(points[0].y)} m`
+          );
+          points.slice(1).forEach((point) => {
+            commands.push(
+              `${formatPdfNumber(point.x)} ${formatPdfNumber(point.y)} l`
+            );
+          });
+          commands.push("h f");
+        });
+        return;
+      }
+      commands.push(
+        "0.471 0.741 0.404 rg"
+      );
+
+      commands.push(...pdfFuelTokenPath(barrier));
+
+      if (isFuel) {
+        const crossA1 = pdfPoint(transformExportPoint(barrier, -5, -5));
+        const crossA2 = pdfPoint(transformExportPoint(barrier, 5, 5));
+        const crossB1 = pdfPoint(transformExportPoint(barrier, 5, -5));
+        const crossB2 = pdfPoint(transformExportPoint(barrier, -5, 5));
+        commands.push(
+          "0.31 0.51 0.278 RG",
+          `${formatPdfNumber(1.5 * pointsPerMm)} w`,
+          "1 J",
+          `${formatPdfNumber(crossA1.x)} ${formatPdfNumber(crossA1.y)} m`,
+          `${formatPdfNumber(crossA2.x)} ${formatPdfNumber(crossA2.y)} l S`,
+          `${formatPdfNumber(crossB1.x)} ${formatPdfNumber(crossB1.y)} m`,
+          `${formatPdfNumber(crossB2.x)} ${formatPdfNumber(crossB2.y)} l S`
+        );
+      }
+    });
+    commands.push("Q");
+
+    const encoder = new TextEncoder();
+    const content = `${commands.join("\n")}\n`;
+    const contentLength = encoder.encode(content).length;
+    const objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${formatPdfNumber(pageWidth)} ${formatPdfNumber(pageHeight)}] /Resources << /ExtGState << /GS1 5 0 R /GS2 6 0 R /GS3 7 0 R >> >> /Contents 4 0 R >>`,
+      `<< /Length ${contentLength} >>\nstream\n${content}endstream`,
+      "<< /Type /ExtGState /ca 0.1 /CA 0.1 >>",
+      "<< /Type /ExtGState /ca 0.022 /CA 0.022 >>",
+      "<< /Type /ExtGState /ca 0.14 /CA 0.14 >>",
+    ];
+
+    let pdf = "%PDF-1.4\n";
+    const offsets = [0];
+    objects.forEach((object, index) => {
+      offsets.push(encoder.encode(pdf).length);
+      pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    });
+    const xrefOffset = encoder.encode(pdf).length;
+    pdf += `xref\n0 ${objects.length + 1}\n`;
+    pdf += "0000000000 65535 f \n";
+    offsets.slice(1).forEach((offset) => {
+      pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+    });
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+    pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
+
+    return encoder.encode(pdf);
+  }
+
+  function exportPdf() {
+    try {
+      state.trackName = trackNameInput.value.trim() || "Untitled Track";
+      trackNameInput.value = state.trackName;
+
+      const blob = new Blob([createPdfBytes()], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${sanitizeFileName(state.trackName)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      window.alert(`Could not export PDF.\n\n${error.message}`);
     }
   }
 
@@ -855,7 +1174,36 @@
     }));
   }
 
+  function arrowLocalPoints() {
+    const halfLength = ARROW_LENGTH / 2;
+    const halfWidth = ARROW_WIDTH / 2;
+    const shaftHalfWidth = ARROW_WIDTH * 0.18;
+    const headStart = ARROW_LENGTH * 0.08;
+    return [
+      { x: -halfLength, y: -shaftHalfWidth },
+      { x: headStart, y: -shaftHalfWidth },
+      { x: headStart, y: -halfWidth },
+      { x: halfLength, y: 0 },
+      { x: headStart, y: halfWidth },
+      { x: headStart, y: shaftHalfWidth },
+      { x: -halfLength, y: shaftHalfWidth },
+    ];
+  }
+
+  function localPointsPolygon(barrier, points) {
+    const angle = (barrier.rotation * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return points.map((point) => ({
+      x: barrier.x + point.x * cos - point.y * sin,
+      y: barrier.y + point.x * sin + point.y * cos,
+    }));
+  }
+
   function barrierPolygons(barrier) {
+    if (barrier.kind === "arrow") {
+      return [localPointsPolygon(barrier, arrowLocalPoints())];
+    }
     if (barrier.kind === "fuel") {
       return [localRectanglePolygon(
         barrier,
@@ -1212,12 +1560,12 @@
     y = barrier.y,
     rotation = barrier.rotation
   ) {
-    if (barrier.kind === "fuel") return null;
+    if (barrier.kind === "fuel" || barrier.kind === "arrow") return null;
     const movingRectangles = barrierRectangles(barrier, x, y, rotation);
     let strongestOverlap = null;
 
     state.barriers.forEach((other) => {
-      if (other.id === barrier.id || other.kind === "fuel") return;
+      if (other.id === barrier.id || other.kind === "fuel" || other.kind === "arrow") return;
 
       const otherRectangles = barrierRectangles(other);
 
@@ -1283,7 +1631,11 @@
     y = movingBarrier.y,
     rotation = movingBarrier.rotation
   ) {
-    if (!state.magnetsEnabled || movingBarrier.kind === "fuel") return null;
+    if (
+      !state.magnetsEnabled ||
+      movingBarrier.kind === "fuel" ||
+      movingBarrier.kind === "arrow"
+    ) return null;
 
     const overlap = overlapInfo(movingBarrier, x, y, rotation);
 
@@ -1305,7 +1657,11 @@
     let nearest = null;
 
     state.barriers.forEach((other) => {
-      if (other.id === movingBarrier.id || other.kind === "fuel") return;
+      if (
+        other.id === movingBarrier.id ||
+        other.kind === "fuel" ||
+        other.kind === "arrow"
+      ) return;
 
       const otherEndpoints = endpointPositions(other);
 
@@ -1417,13 +1773,49 @@
     return adjusted;
   }
 
+  function createBarrierGlowGroup(barrier) {
+    if (barrier.kind === "fuel" || barrier.kind === "arrow") return null;
+
+    const group = createSvgElement("g", {
+      transform: `translate(${barrier.x} ${barrier.y}) rotate(${barrier.rotation})`,
+      "pointer-events": "none",
+    });
+    const length = barrierLength(barrier);
+    const x1 = -length / 2;
+    const x2 = length / 2;
+    const footCenters = barrier.kind === "short"
+      ? [0]
+      : [x1 + LONG_FOOT_OFFSET, x2 - LONG_FOOT_OFFSET];
+
+    group.appendChild(createSvgElement("line", {
+      x1, y1: 0, x2, y2: 0, class: "barrier-glow",
+    }));
+    footCenters.forEach((footX) => {
+      group.appendChild(createSvgElement("line", {
+        x1: footX, y1: -FOOT_LENGTH / 2,
+        x2: footX, y2: FOOT_LENGTH / 2,
+        class: "barrier-glow",
+      }));
+    });
+
+    return group;
+  }
+
   function createBarrierGroup(barrier) {
     const group = createSvgElement("g", {
       "data-id": barrier.id,
       transform: `translate(${barrier.x} ${barrier.y}) rotate(${barrier.rotation})`,
     });
 
-    if (barrier.kind === "fuel") {
+    if (barrier.kind === "arrow") {
+      const points = arrowLocalPoints()
+        .map((point) => `${point.x},${point.y}`)
+        .join(" ");
+      group.appendChild(createSvgElement("polygon", {
+        points,
+        class: "direction-arrow",
+      }));
+    } else if (barrier.kind === "fuel") {
       const half = FUEL_TOKEN_SIZE / 2;
       group.appendChild(createSvgElement("rect", {
         x: -half, y: -half, width: FUEL_TOKEN_SIZE, height: FUEL_TOKEN_SIZE,
@@ -1441,18 +1833,14 @@
       const x1 = -length / 2;
       const x2 = length / 2;
       const colorClass = barrier.kind === "red" ? " red" : "";
+      const footCenters = barrier.kind === "short"
+        ? [0]
+        : [x1 + LONG_FOOT_OFFSET, x2 - LONG_FOOT_OFFSET];
 
       group.appendChild(createSvgElement("line", {
         x1, y1: 0, x2, y2: 0, class: `barrier-line${colorClass}`,
         "pointer-events": "none",
       }));
-      group.appendChild(createSvgElement("line", {
-        x1, y1: 0, x2, y2: 0, class: "barrier-hitbox",
-      }));
-
-      const footCenters = barrier.kind === "short"
-        ? [0]
-        : [x1 + LONG_FOOT_OFFSET, x2 - LONG_FOOT_OFFSET];
 
       footCenters.forEach((footX) => {
         group.appendChild(createSvgElement("line", {
@@ -1461,6 +1849,9 @@
           class: `barrier-foot${colorClass}`, "pointer-events": "none",
         }));
       });
+      group.appendChild(createSvgElement("line", {
+        x1, y1: 0, x2, y2: 0, class: "barrier-hitbox",
+      }));
     }
 
     group.addEventListener("pointerdown", (event) => {
@@ -1597,10 +1988,14 @@
       const padding = 15;
       const width = selectedBarrier.kind === "fuel"
         ? FUEL_TOKEN_SIZE
-        : barrierLength(selectedBarrier);
+        : selectedBarrier.kind === "arrow"
+          ? ARROW_LENGTH
+          : barrierLength(selectedBarrier);
       const height = selectedBarrier.kind === "fuel"
         ? FUEL_TOKEN_SIZE
-        : FOOT_LENGTH;
+        : selectedBarrier.kind === "arrow"
+          ? ARROW_WIDTH
+          : FOOT_LENGTH;
       const box = createSvgElement("rect", {
         x: -width / 2 - padding,
         y: -height / 2 - padding,
@@ -1690,12 +2085,14 @@
 
       overlayLayer.appendChild(handle);
     } else {
-      const length = barrierLength(barrier);
       const padding = 15;
-      const handleDistance = FOOT_LENGTH / 2 + 45;
+      const objectHalfHeight = barrier.kind === "arrow"
+        ? ARROW_WIDTH / 2
+        : FOOT_LENGTH / 2;
+      const handleDistance = objectHalfHeight + 45;
       const handleLine = createSvgElement("line", {
         x1: 0,
-        y1: -FOOT_LENGTH / 2 - padding,
+        y1: -objectHalfHeight - padding,
         x2: 0,
         y2: -handleDistance,
         class: "rotation-line",
@@ -1761,9 +2158,18 @@
 
   function render() {
     renderBarrierCounter();
+    decorationsLayer.innerHTML = "";
+    barrierGlowsLayer.innerHTML = "";
     barriersLayer.innerHTML = "";
     state.barriers.forEach((barrier) => {
-      barriersLayer.appendChild(createBarrierGroup(barrier));
+      const glow = createBarrierGlowGroup(barrier);
+      if (glow) barrierGlowsLayer.appendChild(glow);
+      const group = createBarrierGroup(barrier);
+      if (barrier.kind === "arrow") {
+        decorationsLayer.appendChild(group);
+      } else {
+        barriersLayer.appendChild(group);
+      }
     });
     renderSelection();
   }
@@ -1916,6 +2322,7 @@
   saveTrackButton.addEventListener("click", saveTrack);
   loadTrackButton.addEventListener("click", () => trackFileInput.click());
   exportSvgButton.addEventListener("click", exportSvg);
+  exportPdfButton.addEventListener("click", exportPdf);
   trackFileInput.addEventListener("change", () => {
     loadTrackFile(trackFileInput.files?.[0]);
   });
@@ -1935,6 +2342,7 @@
   addShortButton.addEventListener("click", () => addBarrier("short"));
   addRedButton.addEventListener("click", () => addBarrier("red"));
   addFuelButton.addEventListener("click", () => addBarrier("fuel"));
+  addArrowButton.addEventListener("click", () => addBarrier("arrow"));
   deleteButton.addEventListener("click", deleteSelected);
   duplicateButton.addEventListener("click", duplicateSelected);
   angleInput.addEventListener("change", applyAngleInput);

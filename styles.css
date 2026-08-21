@@ -78,6 +78,70 @@ button:hover {
   background: #604b3d;
 }
 
+#addLong,
+#addShort,
+#addRed,
+#addFuel,
+#addArrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+#addLong::before,
+#addShort::before,
+#addRed::before {
+  content: "";
+  display: inline-block;
+  height: 3px;
+  flex: 0 0 auto;
+  background: #a98266;
+  box-shadow: 0 0 0 2px rgba(255, 224, 146, 0.14);
+}
+
+#addLong::before {
+  width: 20px;
+}
+
+#addShort::before {
+  width: 11px;
+}
+
+#addRed::before {
+  width: 18px;
+  background: var(--leaf);
+}
+
+#addFuel::before {
+  content: "×";
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid #a8d399;
+  border-radius: 3px;
+  background: var(--leaf);
+  color: var(--leaf-dark);
+  font-size: 13px;
+  line-height: 1;
+}
+
+#addArrow::before {
+  content: "➜";
+  color: #c49a69;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.direction-arrow {
+  fill: rgba(111, 72, 35, 0.2);
+  cursor: grab;
+}
+
+.direction-arrow:active {
+  cursor: grabbing;
+}
+
 button:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -165,6 +229,13 @@ button:disabled {
 .canvas-texture {
   fill: #9e6a38;
   opacity: 0.42;
+}
+
+.barrier-glow {
+  stroke: rgba(255, 224, 146, 0.38);
+  stroke-width: 9;
+  stroke-linecap: round;
+  filter: blur(2px);
 }
 
 .barrier-line {
