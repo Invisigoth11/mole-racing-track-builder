@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mole Racing Track Builder</title>
-  <link rel="stylesheet" href="styles.css?v=35.3" />
+  <link rel="stylesheet" href="styles.css?v=35.4" />
 </head>
 <body>
   <header class="toolbar">
@@ -98,6 +98,16 @@
       </g>
     </svg>
 
+    <section id="welcomePanel" class="welcome-panel" aria-labelledby="welcomeTitle">
+      <span class="welcome-eyebrow">Mole Racing</span>
+      <h1 id="welcomeTitle">Build your track</h1>
+      <p>Add barriers using the toolbar above, or load a track you already saved.</p>
+      <div class="welcome-actions">
+        <button id="welcomeAddLong" type="button">Add Long Barrier</button>
+        <button id="welcomeLoadTrack" type="button" class="welcome-secondary">Load Track…</button>
+      </div>
+    </section>
+
     <div class="help">
       <strong>Controls</strong>
       <span>Drag a barrier to move it</span>
@@ -116,6 +126,6 @@
     </div>
   </main>
 
-  <script src="app.js?v=35.3"></script>
+  <script src="app.js?v=35.4"></script>
 </body>
 </html>
