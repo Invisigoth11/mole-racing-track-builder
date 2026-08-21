@@ -821,52 +821,6 @@
       `0 0 ${formatPdfNumber(pageWidth)} ${formatPdfNumber(pageHeight)} re f`,
     ];
 
-    // Deterministic, low-opacity sand speckles inspired by the rulebook.
-    let textureSeed = (
-      Math.round(widthMm * 10) * 73856093 ^
-      Math.round(heightMm * 10) * 19349663
-    ) >>> 0;
-    const textureRandom = () => {
-      textureSeed = (textureSeed * 1664525 + 1013904223) >>> 0;
-      return textureSeed / 4294967296;
-    };
-    const pdfCircle = (x, y, radius) => {
-      const k = radius * 0.5522847498;
-      return [
-        `${formatPdfNumber(x + radius)} ${formatPdfNumber(y)} m`,
-        `${formatPdfNumber(x + radius)} ${formatPdfNumber(y + k)} ` +
-          `${formatPdfNumber(x + k)} ${formatPdfNumber(y + radius)} ` +
-          `${formatPdfNumber(x)} ${formatPdfNumber(y + radius)} c`,
-        `${formatPdfNumber(x - k)} ${formatPdfNumber(y + radius)} ` +
-          `${formatPdfNumber(x - radius)} ${formatPdfNumber(y + k)} ` +
-          `${formatPdfNumber(x - radius)} ${formatPdfNumber(y)} c`,
-        `${formatPdfNumber(x - radius)} ${formatPdfNumber(y - k)} ` +
-          `${formatPdfNumber(x - k)} ${formatPdfNumber(y - radius)} ` +
-          `${formatPdfNumber(x)} ${formatPdfNumber(y - radius)} c`,
-        `${formatPdfNumber(x + k)} ${formatPdfNumber(y - radius)} ` +
-          `${formatPdfNumber(x + radius)} ${formatPdfNumber(y - k)} ` +
-          `${formatPdfNumber(x + radius)} ${formatPdfNumber(y)} c f`,
-      ];
-    };
-    const speckleCount = Math.min(
-      180,
-      Math.max(45, Math.round((widthMm * heightMm) / 700))
-    );
-    commands.push("q", "/GS1 gs", "0.624 0.416 0.204 rg");
-    for (let index = 0; index < speckleCount; index += 1) {
-      const radiusMm = index % 7 === 0
-        ? 3 + textureRandom() * 7
-        : 0.35 + textureRandom() * 1.5;
-      commands.push(
-        ...pdfCircle(
-          textureRandom() * pageWidth,
-          textureRandom() * pageHeight,
-          radiusMm * pointsPerMm
-        )
-      );
-    }
-    commands.push("Q");
-
     // Keep every highlight below every barrier, matching the editor layer order.
     const glowSegments = [];
     state.barriers.forEach((barrier) => {
@@ -884,7 +838,7 @@
     }
     commands.push("Q");
 
-    // Mask texture and highlights below arrows, then add their translucent fill.
+    // Mask highlights below arrows, then add their translucent fill.
     const pdfArrows = state.barriers.filter((barrier) => barrier.kind === "arrow");
     const drawPdfArrows = () => {
       pdfArrows.forEach((arrow) => {
